@@ -1,0 +1,344 @@
+---
+title: createStorage
+description: Factory function for creating custom storage instances with specific configurations
+---
+
+The `createStorage` function is a factory that creates custom storage instances. Use this when you need multiple storage configurations or want to customize global serialization behavior.
+
+## Import
+
+<CodeGroup>
+
+```typescript Web
+import { createStorage } from 'stan-js/storage'
+```
+
+```typescript React Native
+import { createStorage } from 'stan-js/storage/native'
+```
+
+</CodeGroup>
+
+## Usage
+
+### Basic Custom Storage
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+
+// Create a custom storage instance with default serialization
+const customStorage = createStorage()
+
+export const { useStore } = createStore({
+  theme: customStorage('light'),
+  settings: customStorage({ notifications: true })
+})
+```
+
+### Custom Serialization
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+import superjson from 'superjson'
+
+// Create storage that uses superjson for all values
+const jsonStorage = createStorage({
+  serialize: superjson.stringify,
+  deserialize: superjson.parse
+})
+
+export const { useStore } = createStore({
+  // All values use superjson serialization
+  userData: jsonStorage({ name: '', createdAt: new Date() }),
+  settings: jsonStorage(new Map([['theme', 'dark']]))
+})
+```
+
+### Custom MMKV Instance (React Native)
+
+```typescript
+import { createStorage } from 'stan-js/storage/native'
+import { createStore } from 'stan-js'
+import { MMKV } from 'react-native-mmkv'
+
+// Create a custom MMKV instance with encryption
+const secureMMKV = new MMKV({
+  id: 'secure-storage',
+  encryptionKey: 'your-encryption-key'
+})
+
+const secureStorage = createStorage({
+  mmkvInstance: secureMMKV
+})
+
+export const { useStore } = createStore({
+  authToken: secureStorage(''),
+  sensitiveData: secureStorage({ apiKey: '', secret: '' })
+})
+```
+
+## Signature
+
+```typescript
+function createStorage(
+  options?: CreateStorageOptions
+): Storage
+```
+
+## Parameters
+
+<ParamField path="options" type="CreateStorageOptions">
+  Configuration options for the storage instance.
+  
+  <Expandable title="CreateStorageOptions properties">
+    <ParamField path="serialize" type="(value: unknown) => string">
+      Global serialization function applied to all values. Defaults to `JSON.stringify`.
+      
+      ```typescript
+      const storage = createStorage({
+        serialize: (value) => msgpack.encode(value)
+      })
+      ```
+    </ParamField>
+    
+    <ParamField path="deserialize" type="(value: string) => unknown">
+      Global deserialization function applied to all values. Defaults to `JSON.parse`.
+      
+      ```typescript
+      const storage = createStorage({
+        deserialize: (value) => msgpack.decode(value)
+      })
+      ```
+    </ParamField>
+    
+    <ParamField path="mmkvInstance" type="MMKV">
+      **(React Native only)** Custom MMKV instance to use instead of the default.
+      
+      ```typescript
+      import { MMKV } from 'react-native-mmkv'
+      
+      const customMMKV = new MMKV({ id: 'custom-storage' })
+      
+      const storage = createStorage({
+        mmkvInstance: customMMKV
+      })
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+A `Storage` function that can be called with `(initialValue, options?)` to create persisted state values.
+
+```typescript
+type Storage = {
+  <T>(initialValue: T, options?: StorageOptions<T>): Synchronizer<T>
+  <T>(initialValue?: T, options?: StorageOptions<T>): Synchronizer<T | undefined>
+}
+```
+
+## Examples
+
+### Multiple Storage Instances
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+
+// Regular storage for user preferences
+const userStorage = createStorage()
+
+// Session storage for temporary data (custom implementation)
+const sessionStorage = createStorage({
+  serialize: JSON.stringify,
+  deserialize: JSON.parse
+})
+
+export const { useStore } = createStore({
+  // Persisted permanently
+  theme: userStorage('light'),
+  preferences: userStorage({ lang: 'en' }),
+  
+  // Cleared on app restart
+  sessionId: sessionStorage(''),
+  tempCache: sessionStorage({})
+})
+```
+
+### Custom Serialization Library
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+import devalue from 'devalue'
+
+const devalueStorage = createStorage({
+  serialize: devalue.stringify,
+  deserialize: devalue.parse
+})
+
+export const { useStore } = createStore({
+  // Can now store complex types like Date, Map, Set, etc.
+  lastLogin: devalueStorage(new Date()),
+  userMap: devalueStorage(new Map()),
+  tags: devalueStorage(new Set(['react', 'typescript']))
+})
+```
+
+### Binary Serialization
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+import msgpack from 'msgpack-lite'
+
+const binaryStorage = createStorage({
+  serialize: (value) => Buffer.from(msgpack.encode(value)).toString('base64'),
+  deserialize: (value) => msgpack.decode(Buffer.from(value, 'base64'))
+})
+
+export const { useStore } = createStore({
+  largeDataset: binaryStorage({ items: [] })
+})
+```
+
+### Encrypted Storage (React Native)
+
+```typescript
+import { createStorage } from 'stan-js/storage/native'
+import { createStore } from 'stan-js'
+import { MMKV } from 'react-native-mmkv'
+
+// Create encrypted MMKV instance
+const encryptedMMKV = new MMKV({
+  id: 'user-data',
+  encryptionKey: 'my-encryption-key-from-keychain'
+})
+
+const secureStorage = createStorage({
+  mmkvInstance: encryptedMMKV
+})
+
+export const { useStore } = createStore({
+  authToken: secureStorage(''),
+  creditCard: secureStorage(''),
+  personalInfo: secureStorage({ ssn: '', address: '' })
+})
+```
+
+### Multiple MMKV Instances
+
+```typescript
+import { createStorage } from 'stan-js/storage/native'
+import { createStore } from 'stan-js'
+import { MMKV } from 'react-native-mmkv'
+
+// Separate storage for different data types
+const userMMKV = new MMKV({ id: 'user-storage' })
+const cacheMMKV = new MMKV({ id: 'cache-storage' })
+
+const userStorage = createStorage({ mmkvInstance: userMMKV })
+const cacheStorage = createStorage({ mmkvInstance: cacheMMKV })
+
+export const { useStore } = createStore({
+  // Stored in user-storage MMKV instance
+  user: userStorage({ name: '', email: '' }),
+  settings: userStorage({ theme: 'light' }),
+  
+  // Stored in cache-storage MMKV instance
+  apiCache: cacheStorage({}),
+  imageCache: cacheStorage([])
+})
+```
+
+### Per-Value Options Override
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+
+// Global serialization uses JSON
+const storage = createStorage({
+  serialize: JSON.stringify,
+  deserialize: JSON.parse
+})
+
+export const { useStore } = createStore({
+  // Uses global serialization
+  theme: storage('light'),
+  
+  // Override with custom serialization for this value only
+  timestamp: storage(
+    new Date(),
+    {
+      serialize: (date) => date.toISOString(),
+      deserialize: (str) => new Date(str)
+    }
+  )
+})
+```
+
+## TypeScript
+
+The storage instance is fully typed and infers types from usage:
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+import { createStore } from 'stan-js'
+
+const storage = createStorage()
+
+type User = {
+  id: string
+  name: string
+}
+
+export const { useStore } = createStore({
+  // Type is inferred as string
+  theme: storage('light'),
+  
+  // Type is inferred as User | null
+  user: storage<User | null>(null),
+  
+  // Type is inferred as number[]
+  items: storage([] as number[])
+})
+```
+
+## Platform Differences
+
+### Web Implementation
+
+- Located at `stan-js/storage/factory.ts`
+- Uses `localStorage` API
+- Includes SSR safety checks
+- Falls back to in-memory Map when localStorage unavailable
+- Supports cross-tab synchronization
+
+### React Native Implementation
+
+- Located at `stan-js/storage/mmkvFactory.ts`
+- Uses `react-native-mmkv` library
+- Supports both MMKV v2 and v3
+- Does not support cross-instance synchronization
+- Faster and more reliable than AsyncStorage
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="storage" icon="database" href="/api/storage/storage">
+    Pre-configured storage wrapper
+  </Card>
+  <Card title="MMKV Integration" icon="mobile" href="/api/storage/mmkv">
+    React Native MMKV setup and configuration
+  </Card>
+  <Card title="Synchronizer Type" icon="code" href="/api/types/synchronizer">
+    TypeScript interface for custom synchronizers
+  </Card>
+  <Card title="Persistence Guide" icon="book" href="/guides/persistence">
+    Complete guide to data persistence patterns
+  </Card>
+</CardGroup>

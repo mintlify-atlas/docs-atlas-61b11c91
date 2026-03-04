@@ -1,0 +1,257 @@
+---
+title: 'getState'
+description: 'Get the current state from a vanilla store'
+---
+
+## Overview
+
+The `getState` method returns the current state of the store. It provides immediate, synchronous access to all state values including computed properties.
+
+## Signature
+
+```typescript
+function getState(): TState
+```
+
+## Return Value
+
+<ResponseField name="state" type="TState">
+  The current state object containing all state values and computed properties.
+  
+  - Returns a direct reference to the state object
+  - Includes computed values (getters) evaluated at call time
+  - Always reflects the latest state after any updates
+</ResponseField>
+
+## Basic Example
+
+```javascript
+import { createStore } from '@codemask-labs/stan-js/vanilla'
+
+const store = createStore({
+  count: 0,
+  message: 'Hello'
+})
+
+// Get the entire state
+const state = store.getState()
+console.log(state) // { count: 0, message: 'Hello' }
+
+// Access individual properties
+console.log(state.count) // 0
+console.log(state.message) // 'Hello'
+```
+
+## Accessing After Updates
+
+```javascript
+const store = createStore({
+  count: 0,
+  items: []
+})
+
+store.actions.setCount(5)
+store.actions.setItems(['a', 'b', 'c'])
+
+// getState always returns the latest values
+const state = store.getState()
+console.log(state.count) // 5
+console.log(state.items) // ['a', 'b', 'c']
+```
+
+## With Computed Values
+
+```javascript
+const store = createStore({
+  price: 100,
+  quantity: 3,
+  taxRate: 0.1,
+  get subtotal() {
+    return this.price * this.quantity
+  },
+  get tax() {
+    return this.subtotal * this.taxRate
+  },
+  get total() {
+    return this.subtotal + this.tax
+  }
+})
+
+const state = store.getState()
+console.log(state.subtotal) // 300
+console.log(state.tax) // 30
+console.log(state.total) // 330
+
+// Computed values update automatically
+store.actions.setQuantity(5)
+const newState = store.getState()
+console.log(newState.subtotal) // 500
+console.log(newState.total) // 550
+```
+
+## In Custom Actions
+
+Use `getState` in custom actions to read current values:
+
+```javascript
+const cartStore = createStore(
+  {
+    items: [],
+    discount: 0
+  },
+  ({ getState, actions }) => ({
+    addItem: (item) => {
+      const currentItems = getState().items
+      actions.setItems([...currentItems, item])
+    },
+    applyBulkDiscount: () => {
+      const itemCount = getState().items.length
+      if (itemCount >= 10) {
+        actions.setDiscount(0.2) // 20% off
+      } else if (itemCount >= 5) {
+        actions.setDiscount(0.1) // 10% off
+      }
+    },
+    checkout: () => {
+      const state = getState()
+      const subtotal = state.items.reduce((sum, item) => sum + item.price, 0)
+      const total = subtotal * (1 - state.discount)
+      return { subtotal, discount: state.discount, total }
+    }
+  })
+)
+
+cartStore.actions.addItem({ id: 1, price: 10 })
+cartStore.actions.addItem({ id: 2, price: 15 })
+
+const result = cartStore.actions.checkout()
+console.log(result) // { subtotal: 25, discount: 0, total: 25 }
+```
+
+## Reading in Effects
+
+Access state within effect callbacks:
+
+```javascript
+const store = createStore({
+  username: '',
+  password: '',
+  isValid: false
+})
+
+store.effect(state => {
+  // state parameter is the same as getState()
+  console.log('Current username:', state.username)
+  console.log('Password length:', state.password.length)
+})
+
+// You can also call getState directly
+const unsubscribe = store.effect(() => {
+  const state = store.getState()
+  const isValid = state.username.length >= 3 && state.password.length >= 8
+  
+  if (state.isValid !== isValid) {
+    store.actions.setIsValid(isValid)
+  }
+})
+```
+
+## Direct Reference
+
+`getState()` returns a direct reference to the state object. Modifying it directly will not trigger updates:
+
+```javascript
+const store = createStore({
+  items: [1, 2, 3]
+})
+
+// ❌ Don't mutate directly - won't trigger updates
+const state = store.getState()
+state.items.push(4)
+
+// ✓ Use actions instead
+store.actions.setItems(prev => [...prev, 4])
+```
+
+## Type Safety
+
+TypeScript provides complete type information:
+
+```typescript
+interface AppState {
+  user: { id: number; name: string } | null
+  settings: {
+    theme: 'light' | 'dark'
+    notifications: boolean
+  }
+}
+
+const store = createStore<AppState>({
+  user: null,
+  settings: {
+    theme: 'light',
+    notifications: true
+  }
+})
+
+const state = store.getState()
+
+// TypeScript knows all types
+const userName: string | undefined = state.user?.name
+const theme: 'light' | 'dark' = state.settings.theme
+const notifs: boolean = state.settings.notifications
+```
+
+## Use Cases
+
+### Reading for External APIs
+
+```javascript
+const authStore = createStore({
+  token: null,
+  user: null
+})
+
+async function fetchUserProfile() {
+  const { token } = authStore.getState()
+  
+  if (!token) {
+    throw new Error('Not authenticated')
+  }
+  
+  const response = await fetch('/api/profile', {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  
+  const user = await response.json()
+  authStore.actions.setUser(user)
+}
+```
+
+### Logging and Debugging
+
+```javascript
+const store = createStore({
+  requestCount: 0,
+  errorCount: 0,
+  lastError: null
+})
+
+function logStoreState() {
+  const state = store.getState()
+  console.log('Store snapshot:', {
+    requestCount: state.requestCount,
+    errorCount: state.errorCount,
+    lastError: state.lastError
+  })
+}
+
+// Log state periodically
+setInterval(logStoreState, 5000)
+```
+
+## See Also
+
+- [createStore](/api/vanilla/create-store) - Create a vanilla store
+- [effect](/api/vanilla/effect) - Subscribe to state changes
+- [batchUpdates](/api/vanilla/batch-updates) - Batch multiple updates

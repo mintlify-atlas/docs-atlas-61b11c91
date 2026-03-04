@@ -1,0 +1,496 @@
+---
+title: Performance Optimization
+description: Best practices and patterns for optimal Stan.js performance
+---
+
+Stan.js is designed for performance out of the box, but following these patterns will ensure your application runs efficiently at scale.
+
+## Re-render Optimization
+
+Stan.js uses a **proxy-based selective subscription system** that automatically optimizes re-renders.
+
+### Only Subscribe to What You Use
+
+Components only re-render when the state values they **actually access** change:
+
+```typescript
+const { useStore } = createStore({
+  counter: 0,
+  message: 'hello',
+  users: [] as Array<string>
+})
+
+// This component ONLY subscribes to 'counter'
+const Counter = () => {
+  const { counter, setCounter } = useStore()
+  //      ^^^^^^^ subscribed
+  //                ^^^^^^^^^^^ NOT subscribed (action only)
+  
+  return <button onClick={() => setCounter(prev => prev + 1)}>{counter}</button>
+}
+
+// Updating 'message' or 'users' will NOT re-render Counter
+```
+
+<Tip>
+Accessing only setter functions means **zero re-renders** when state changes. This is perfect for action-only components.
+</Tip>
+
+### Split Components Strategically
+
+Break components into smaller pieces that access minimal state:
+
+```typescript
+// ❌ Bad: Single component subscribes to everything
+const Dashboard = () => {
+  const { user, posts, comments, notifications } = useStore()
+  
+  return (
+    <div>
+      <UserProfile user={user} />
+      <PostList posts={posts} />
+      <CommentList comments={comments} />
+      <NotificationBadge count={notifications.length} />
+    </div>
+  )
+}
+
+// ✅ Good: Each component subscribes only to what it needs
+const UserProfileContainer = () => {
+  const { user } = useStore()
+  return <UserProfile user={user} />
+}
+
+const PostListContainer = () => {
+  const { posts } = useStore()
+  return <PostList posts={posts} />
+}
+
+const Dashboard = () => (
+  <div>
+    <UserProfileContainer />
+    <PostListContainer />
+    {/* ... */}
+  </div>
+)
+```
+
+### Use getState for One-Time Reads
+
+Read values without subscribing using `getState()`:
+
+```typescript
+import { getState, useStore } from './store'
+
+const FormInput = () => {
+  const { setMessage } = useStore()
+  
+  // No subscription, no re-renders from 'message' changes
+  return (
+    <input
+      defaultValue={getState().message}
+      onChange={e => setMessage(e.target.value)}
+    />
+  )
+}
+```
+
+## Computed Values
+
+Use getters for derived state instead of calculating in components:
+
+```typescript
+// ❌ Bad: Calculation happens on every render
+const UserList = () => {
+  const { users } = useStore()
+  const activeUsers = users.filter(u => u.active) // Recalculates every render
+  
+  return <div>{activeUsers.length} active users</div>
+}
+
+// ✅ Good: Calculation happens in the store
+const { useStore } = createStore({
+  users: [] as Array<User>,
+  get activeUsers() {
+    return this.users.filter(u => u.active) // Only recalculates when users change
+  }
+})
+
+const UserList = () => {
+  const { activeUsers } = useStore()
+  return <div>{activeUsers.length} active users</div>
+}
+```
+
+From `src/vanilla/createStore.ts:186`, computed values track dependencies and only update when necessary.
+
+## Batch Updates
+
+Group multiple updates to trigger listeners only once:
+
+```typescript
+import { batchUpdates, actions } from './store'
+
+// ❌ Bad: Three separate updates = three re-renders
+const resetForm = () => {
+  actions.setName('')
+  actions.setEmail('')
+  actions.setMessage('')
+}
+
+// ✅ Good: One batch = one re-render
+const resetForm = () => {
+  batchUpdates(() => {
+    actions.setName('')
+    actions.setEmail('')
+    actions.setMessage('')
+  })
+}
+```
+
+Custom actions are **automatically batched**:
+
+```typescript
+const { useStore } = createStore(
+  { name: '', email: '', message: '' },
+  ({ actions }) => ({
+    resetForm: () => {
+      actions.setName('')
+      actions.setEmail('')
+      actions.setMessage('')
+      // Automatically batched - only one re-render
+    }
+  })
+)
+```
+
+## Functional Updates
+
+Use functional updates to avoid stale closures:
+
+```typescript
+const { setCounter } = useStore()
+
+// ❌ Bad: May use stale value in closures
+setTimeout(() => {
+  setCounter(counter + 1) // 'counter' might be stale
+}, 1000)
+
+// ✅ Good: Always uses latest value
+setTimeout(() => {
+  setCounter(prev => prev + 1)
+}, 1000)
+```
+
+## Memoization Patterns
+
+### React.memo for Presentational Components
+
+```typescript
+import { memo } from 'react'
+
+interface UserCardProps {
+  user: User
+}
+
+// Only re-renders when 'user' prop changes
+const UserCard = memo(({ user }: UserCardProps) => (
+  <div>
+    <h3>{user.name}</h3>
+    <p>{user.email}</p>
+  </div>
+))
+
+const UserList = () => {
+  const { users } = useStore()
+  
+  return (
+    <div>
+      {users.map(user => <UserCard key={user.id} user={user} />)}
+    </div>
+  )
+}
+```
+
+### useMemo for Expensive Calculations
+
+```typescript
+import { useMemo } from 'react'
+
+const Chart = () => {
+  const { dataPoints } = useStore()
+  
+  // Only recalculate when dataPoints change
+  const chartData = useMemo(() => {
+    return expensiveTransformation(dataPoints)
+  }, [dataPoints])
+  
+  return <ChartComponent data={chartData} />
+}
+```
+
+<Note>
+In most cases, computed values in the store are better than `useMemo` in components.
+</Note>
+
+## Storage Performance
+
+### Keep Storage Values Small
+
+LocalStorage is synchronous and blocks the main thread:
+
+```typescript
+// ❌ Bad: Storing large datasets
+const { useStore } = createStore({
+  allUsers: storage([]) // Could be thousands of items
+})
+
+// ✅ Good: Store only necessary data
+const { useStore } = createStore({
+  currentUserId: storage(''),
+  recentUserIds: storage([] as Array<string>) // Limited to last 10
+})
+```
+
+### Debounce Storage Writes
+
+For frequently updated values, debounce writes:
+
+```typescript
+import { createStore } from 'stan-js'
+import { debounce } from 'lodash'
+
+const { useStore, actions } = createStore({
+  draftMessage: ''
+})
+
+// Debounced storage write
+const saveDraft = debounce((message: string) => {
+  localStorage.setItem('draft', message)
+}, 500)
+
+const MessageEditor = () => {
+  const { draftMessage, setDraftMessage } = useStore()
+  
+  const handleChange = (value: string) => {
+    setDraftMessage(value)
+    saveDraft(value)
+  }
+  
+  return <textarea value={draftMessage} onChange={e => handleChange(e.target.value)} />
+}
+```
+
+## Effect Optimization
+
+### Selective Dependencies
+
+Effects automatically track dependencies:
+
+```typescript
+const { effect } = createStore({
+  user: null as User | null,
+  posts: [] as Array<Post>,
+  comments: [] as Array<Comment>
+})
+
+// Only runs when 'user' changes, not 'posts' or 'comments'
+effect(({ user }) => {
+  if (user) {
+    logUserActivity(user.id)
+  }
+})
+```
+
+### Dispose Effects When Done
+
+Always clean up effects to prevent memory leaks:
+
+```typescript
+const dispose = store.effect(({ counter }) => {
+  console.log('Counter:', counter)
+})
+
+// When no longer needed
+dispose()
+```
+
+In React:
+
+```typescript
+useEffect(() => {
+  const dispose = store.effect(({ counter }) => {
+    console.log('Counter:', counter)
+  })
+  
+  return dispose // Cleanup on unmount
+}, [])
+```
+
+## Large Lists
+
+### Virtualization
+
+For long lists, use virtualization:
+
+```typescript
+import { FixedSizeList } from 'react-window'
+
+const VirtualizedList = () => {
+  const { items } = useStore()
+  
+  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
+    <div style={style}>{items[index].name}</div>
+  )
+  
+  return (
+    <FixedSizeList
+      height={600}
+      itemCount={items.length}
+      itemSize={35}
+      width="100%"
+    >
+      {Row}
+    </FixedSizeList>
+  )
+}
+```
+
+### Pagination
+
+Limit data in the store:
+
+```typescript
+const { useStore } = createStore(
+  {
+    currentPage: 1,
+    itemsPerPage: 50,
+    allItemIds: [] as Array<string>,
+    itemsById: {} as Record<string, Item>,
+    get currentItems() {
+      const start = (this.currentPage - 1) * this.itemsPerPage
+      const end = start + this.itemsPerPage
+      return this.allItemIds.slice(start, end).map(id => this.itemsById[id])
+    }
+  },
+  ({ actions, getState }) => ({
+    nextPage: () => {
+      actions.setCurrentPage(prev => prev + 1)
+    },
+    prevPage: () => {
+      actions.setCurrentPage(prev => Math.max(1, prev - 1))
+    }
+  })
+)
+```
+
+## Normalized Data
+
+Normalize data for efficient updates:
+
+```typescript
+// ❌ Bad: Nested data is hard to update
+const { useStore } = createStore({
+  posts: [
+    { id: '1', title: 'Post 1', author: { id: 'a1', name: 'Alice' } },
+    { id: '2', title: 'Post 2', author: { id: 'a1', name: 'Alice' } }
+  ]
+})
+
+// ✅ Good: Normalized data
+const { useStore } = createStore({
+  postsById: {
+    '1': { id: '1', title: 'Post 1', authorId: 'a1' },
+    '2': { id: '2', title: 'Post 2', authorId: 'a1' }
+  } as Record<string, Post>,
+  authorsById: {
+    'a1': { id: 'a1', name: 'Alice' }
+  } as Record<string, Author>,
+  get posts() {
+    return Object.values(this.postsById)
+  }
+})
+
+// Update a single author efficiently
+actions.setAuthorsById(prev => ({
+  ...prev,
+  'a1': { ...prev['a1'], name: 'Alice Updated' }
+}))
+```
+
+## Profiling and Monitoring
+
+### React DevTools Profiler
+
+Use the React DevTools Profiler to identify unnecessary re-renders:
+
+1. Open React DevTools
+2. Go to Profiler tab
+3. Start recording
+4. Interact with your app
+5. Stop and analyze which components re-rendered
+
+### Custom Logging
+
+```typescript
+const { useStore, effect } = createStore({
+  counter: 0
+})
+
+// Log all state changes in development
+if (process.env.NODE_ENV === 'development') {
+  effect(state => {
+    console.log('State changed:', state)
+  })
+}
+
+// Track specific actions
+const { setCounter } = useStore()
+const trackedSetCounter = (value: number) => {
+  console.time('setCounter')
+  setCounter(value)
+  console.timeEnd('setCounter')
+}
+```
+
+## Best Practices Summary
+
+<CardGroup cols={2}>
+  <Card title="Selective Subscriptions" icon="filter">
+    Access only the state values you need. Avoid destructuring everything.
+  </Card>
+  <Card title="Computed Values" icon="calculator">
+    Use getters for derived state instead of calculating in components.
+  </Card>
+  <Card title="Batch Updates" icon="layer-group">
+    Use `batchUpdates` or custom actions to group related state changes.
+  </Card>
+  <Card title="Split Components" icon="puzzle-piece">
+    Break large components into smaller ones that subscribe to minimal state.
+  </Card>
+  <Card title="Normalize Data" icon="database">
+    Use normalized data structures (by ID) for efficient updates.
+  </Card>
+  <Card title="Dispose Effects" icon="trash">
+    Always clean up effects and subscriptions to prevent memory leaks.
+  </Card>
+  <Card title="Virtualize Lists" icon="list">
+    Use virtualization libraries for large lists to render only visible items.
+  </Card>
+  <Card title="Profile Regularly" icon="chart-line">
+    Use React DevTools Profiler to identify and fix performance issues.
+  </Card>
+</CardGroup>
+
+## Performance Checklist
+
+- [ ] Components only access state values they actually need
+- [ ] Action-only components don't access state values
+- [ ] Computed values are used for derived state
+- [ ] Multiple related updates are batched
+- [ ] Large lists use virtualization or pagination
+- [ ] Data structures are normalized
+- [ ] Effects are disposed when components unmount
+- [ ] Storage values are kept reasonably small
+- [ ] Frequently updated storage values are debounced
+- [ ] React.memo is used for expensive presentational components

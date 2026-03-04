@@ -1,80 +1,325 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get up and running with stan-js in minutes with this complete quickstart guide
 ---
 
-## Get started in three steps
+This guide will walk you through creating your first stan-js store and using it in a React application. You'll learn the core concepts and see how easy it is to manage state with stan-js.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- Node.js installed
+- A React project set up (or create one with Vite, Next.js, or Create React App)
+- Stan.js installed ([see installation guide](/installation))
 
-### Step 2: Deploy your changes
+## Creating Your First Store
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Steps>
+  <Step title="Create a store file">
+    Create a new file called `store.ts` (or `store.js`) in your project:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```typescript store.ts
+    import { createStore } from 'stan-js'
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    export const { useStore, getState, actions, reset } = createStore({
+      counter: 0,
+      message: 'Hello, Stan!',
+      users: [] as Array<string>
+    })
+    ```
 
-### Step 3: Go live
+    The `createStore` function returns everything you need:
+    - `useStore`: React hook for accessing state in components
+    - `getState`: Function to get current state outside React
+    - `actions`: Object containing setter functions (e.g., `setCounter`, `setMessage`)
+    - `reset`: Function to reset state to initial values
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Use the store in a component">
+    Import and use the `useStore` hook in your React component:
 
-## Next steps
+    ```tsx App.tsx
+    import { useStore } from './store'
 
-Now that you have your docs running, explore these key features:
+    const App = () => {
+      const { counter, setCounter } = useStore()
 
-<CardGroup cols={2}>
+      return (
+        <div>
+          <h1>Counter: {counter}</h1>
+          <button onClick={() => setCounter(prev => prev + 1)}>
+            Increment
+          </button>
+          <button onClick={() => setCounter(prev => prev - 1)}>
+            Decrement
+          </button>
+        </div>
+      )
+    }
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    export default App
+    ```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+    <Note>
+      Stan.js automatically generates setter functions for each state property. For a property named `counter`, you get `setCounter`.
+    </Note>
+  </Step>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+  <Step title="Run your app">
+    Start your development server and see your state management in action!
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    ```bash
+    npm run dev
+    ```
 
-</CardGroup>
+    Click the increment and decrement buttons to see the counter update in real-time.
+  </Step>
+</Steps>
+
+## Core Concepts
+
+### Automatic Setter Generation
+
+Stan.js automatically generates setter functions for each property in your store:
+
+```typescript
+const { useStore } = createStore({
+  count: 0,
+  user: '',
+  todos: []
+})
+
+// Available setters:
+// - setCount
+// - setUser  
+// - setTodos
+```
+
+### Updating State
+
+You can update state in two ways:
+
+<CodeGroup>
+
+```typescript Direct Value
+const { setCounter } = useStore()
+
+// Set a direct value
+setCounter(10)
+```
+
+```typescript Updater Function
+const { setCounter } = useStore()
+
+// Use previous value
+setCounter(prev => prev + 1)
+```
+
+</CodeGroup>
+
+### Computed Values
+
+Create computed values using getters that automatically update when dependencies change:
+
+```typescript
+const { useStore } = createStore({
+  count: 0,
+  get doubleCount() {
+    return this.count * 2
+  }
+})
+
+const Component = () => {
+  const { count, doubleCount } = useStore()
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <p>Double: {doubleCount}</p>
+    </div>
+  )
+}
+```
+
+### Selective Re-renders
+
+Stan.js only re-renders components when the specific values they use change:
+
+```tsx
+// This component only re-renders when 'counter' changes
+const Counter = () => {
+  const { counter } = useStore()
+  return <div>{counter}</div>
+}
+
+// This component only re-renders when 'message' changes
+const Message = () => {
+  const { message } = useStore()
+  return <div>{message}</div>
+}
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  This selective re-rendering is automatic - no selectors or memoization needed!
 </Note>
+
+## Complete Example
+
+Here's a more complete example showing multiple features:
+
+<CodeGroup>
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+
+export const { useStore, actions, reset, getState } = createStore({
+  counter: 0,
+  message: 'Hello, Stan!',
+  get upperCaseMessage() {
+    return this.message.toUpperCase()
+  },
+  users: [] as Array<string>
+})
+
+// You can call actions outside React components
+export const incrementCounter = () => {
+  actions.setCounter(prev => prev + 1)
+}
+```
+
+```tsx App.tsx
+import { useStore, reset } from './store'
+
+const CounterDisplay = () => {
+  const { counter } = useStore()
+  return <h2>{counter}</h2>
+}
+
+const CounterControls = () => {
+  const { setCounter } = useStore()
+  
+  return (
+    <div>
+      <button onClick={() => setCounter(prev => prev - 1)}>
+        Decrement
+      </button>
+      <button onClick={() => setCounter(prev => prev + 1)}>
+        Increment
+      </button>
+      <button onClick={() => reset('counter')}>
+        Reset
+      </button>
+    </div>
+  )
+}
+
+const MessageInput = () => {
+  const { message, upperCaseMessage, setMessage } = useStore()
+  
+  return (
+    <div>
+      <input 
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+      />
+      <p>Uppercase: {upperCaseMessage}</p>
+    </div>
+  )
+}
+
+const App = () => (
+  <div>
+    <CounterDisplay />
+    <CounterControls />
+    <MessageInput />
+  </div>
+)
+
+export default App
+```
+
+</CodeGroup>
+
+## Async Operations
+
+Stan.js works seamlessly with async operations:
+
+```tsx
+const UsersList = () => {
+  const { users, setUsers } = useStore()
+
+  const fetchUsers = async () => {
+    const response = await fetch('/api/users')
+    const data = await response.json()
+    setUsers(data)
+  }
+
+  return (
+    <div>
+      <button onClick={fetchUsers}>Fetch Users</button>
+      {users.map(user => <div key={user}>{user}</div>)}
+    </div>
+  )
+}
+```
+
+## Accessing State Outside React
+
+You can access and update state outside of React components:
+
+```typescript
+import { getState, actions } from './store'
+
+// Get current state
+const currentCounter = getState().counter
+
+// Update state
+actions.setCounter(100)
+
+// Example: Update from a timer
+setInterval(() => {
+  actions.setCounter(prev => prev + 1)
+}, 1000)
+```
+
+## Data Persistence
+
+Add persistence to any state property using the `storage` helper:
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  // This value persists in localStorage
+  theme: storage('light'),
+  // This value persists with a custom key
+  user: storage('', { storageKey: 'currentUser' }),
+  // This value doesn't persist
+  tempData: ''
+})
+```
+
+<Note>
+  The `storage` helper uses `localStorage` in browsers and MMKV in React Native (when installed).
+</Note>
+
+## Next Steps
+
+You now know the basics of stan-js! Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="createStore" icon="database" href="/api/create-store">
+    Learn about all createStore options and methods
+  </Card>
+  <Card title="Storage & Persistence" icon="hard-drive" href="/api/types/synchronizer">
+    Deep dive into data persistence
+  </Card>
+  <Card title="Scoped Stores" icon="layer-group" href="/api/scoped/create-scoped-store">
+    Create isolated store instances with React Context
+  </Card>
+  <Card title="Vanilla JS" icon="js" href="/api/vanilla/create-store">
+    Use stan-js without React
+  </Card>
+</CardGroup>

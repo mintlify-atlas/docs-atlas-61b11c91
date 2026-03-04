@@ -1,0 +1,214 @@
+---
+title: createStore
+description: Create a new Stan.js store with state management capabilities
+---
+
+## Overview
+
+The `createStore` function creates a new store with reactive state management. It returns an object containing the store's state access methods, actions, and React hooks.
+
+## Signature
+
+```typescript
+function createStore<TState extends object, TCustomActions extends CustomActions = {}>(
+  stateRaw: TState,
+  customActionsBuilder?: CustomActionsBuilder<TState, TCustomActions>
+): StoreInstance<TState, TCustomActions>
+```
+
+## Parameters
+
+<ParamField path="stateRaw" type="TState extends object" required>
+  The initial state of the store. Can include:
+  - Regular values (primitives, objects, arrays)
+  - Computed properties using getters
+  - Synchronizers (e.g., `storage()` for persistence)
+  
+  Note: Top-level functions are not allowed as state values.
+</ParamField>
+
+<ParamField path="customActionsBuilder" type="CustomActionsBuilder<TState, TCustomActions>">
+  Optional function to create custom actions. Receives an object with:
+  - `getState`: Function to access current state
+  - `actions`: Object containing all generated setter actions
+  - `reset`: Function to reset state values
+  
+  Must return an object with custom action functions. Custom actions are automatically batched.
+</ParamField>
+
+## Return Value
+
+<ResponseField name="getState" type="() => TState">
+  Returns the current state of the store.
+</ResponseField>
+
+<ResponseField name="actions" type="Actions<TState> & TCustomActions">
+  Object containing all setter actions (generated and custom). Generated actions follow the pattern `set[PropertyName]` (e.g., `setCount`, `setName`).
+  
+  Each setter accepts either a new value or an updater function:
+  ```typescript
+  actions.setCount(5)
+  actions.setCount(prev => prev + 1)
+  ```
+</ResponseField>
+
+<ResponseField name="reset" type="(...keys: Array<keyof TState>) => void">
+  Resets store state to initial values. If no keys provided, resets entire store. Updates are batched automatically.
+</ResponseField>
+
+<ResponseField name="effect" type="(run: (state: TState) => void) => () => void">
+  Subscribes to state changes. The callback runs immediately and on each change to accessed properties. Returns a dispose function to unsubscribe.
+</ResponseField>
+
+<ResponseField name="batchUpdates" type="(callback: () => void) => void">
+  Batches multiple state updates into a single notification to subscribers.
+</ResponseField>
+
+<ResponseField name="useStore" type="() => TState & Actions<TState> & TCustomActions">
+  React hook that returns state and actions. Automatically subscribes to only the state properties accessed in the component. See [useStore](/api/use-store).
+</ResponseField>
+
+<ResponseField name="useStoreEffect" type="(run: (state: TState) => void, deps?: DependencyList) => void">
+  React hook for subscribing to state changes with lifecycle management. See [useStoreEffect](/api/use-store-effect).
+</ResponseField>
+
+<ResponseField name="useHydrateState" type="(state: Partial<TState>) => void">
+  React hook to hydrate store state once on component mount. See [useHydrateState](/api/use-hydrate-state).
+</ResponseField>
+
+<ResponseField name="subscribe" type="(keys: Array<keyof TState>) => (listener: () => void) => () => void">
+  Low-level subscription API. Returns a function that accepts a listener and returns an unsubscribe function.
+</ResponseField>
+
+## Examples
+
+### Basic Store
+
+```typescript
+import { createStore } from '@stan-js/react'
+
+const counterStore = createStore({
+  count: 0,
+  text: 'hello'
+})
+
+// Access state
+counterStore.getState().count // 0
+
+// Update state
+counterStore.actions.setCount(5)
+counterStore.actions.setCount(prev => prev + 1)
+```
+
+### With Computed Properties
+
+```typescript
+const store = createStore({
+  counter: 2,
+  get parity() {
+    return this.counter % 2 === 0 ? 'even' : 'odd'
+  }
+})
+
+store.getState().parity // 'even'
+store.actions.setCounter(3)
+store.getState().parity // 'odd'
+```
+
+### With Storage Persistence
+
+```typescript
+import { createStore } from '@stan-js/react'
+import { storage } from '@stan-js/react'
+
+const store = createStore({
+  theme: storage('light'),
+  count: storage(0)
+})
+
+// State is automatically persisted and restored
+store.actions.setTheme('dark')
+```
+
+### With Custom Actions
+
+```typescript
+const userStore = createStore(
+  {
+    firstName: 'John',
+    lastName: 'Doe'
+  },
+  ({ actions }) => ({
+    setUser: (firstName: string, lastName: string) => {
+      actions.setFirstName(firstName)
+      actions.setLastName(lastName)
+    }
+  })
+)
+
+// Updates are batched automatically
+userStore.actions.setUser('Jane', 'Smith')
+```
+
+### Using Effects
+
+```typescript
+const store = createStore({
+  a: 0,
+  b: 0
+})
+
+// Subscribe to specific properties
+const dispose = store.effect(({ a }) => {
+  console.log('a changed:', a)
+})
+
+// Cleanup
+dispose()
+```
+
+### Batch Updates
+
+```typescript
+const store = createStore({
+  x: 0,
+  y: 0
+})
+
+store.effect(({ x, y }) => {
+  console.log('position:', x, y)
+})
+
+// Single notification instead of two
+store.batchUpdates(() => {
+  store.actions.setX(10)
+  store.actions.setY(20)
+})
+```
+
+## Type Definitions
+
+```typescript
+type CustomActions = Record<string, (...args: Array<never>) => void>
+
+type CustomActionsBuilder<TState extends object, TCustomActions extends CustomActions> = (
+  builderParams: {
+    getState: () => TState
+    actions: Actions<RemoveReadonly<TState>>
+    reset: (...keys: Array<keyof RemoveReadonly<TState>>) => void
+  }
+) => TCustomActions
+
+type Actions<TState extends object> = {
+  [K in keyof TState as `set${Capitalize<K & string>}`]: (
+    value: TState[K] | ((prevState: TState[K]) => TState[K])
+  ) => void
+}
+```
+
+## Notes
+
+- Readonly properties (computed getters) do not have setter actions generated
+- State updates that result in equal values (shallow comparison) do not trigger notifications
+- Custom actions are automatically wrapped with `batchUpdates`
+- The store integrates with React DevTools via `__stan-js__` global

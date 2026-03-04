@@ -1,0 +1,421 @@
+---
+title: 'batchUpdates'
+description: 'Batch multiple state updates to trigger listeners only once'
+---
+
+## Overview
+
+The `batchUpdates` method allows you to perform multiple state updates while only triggering subscriptions (effects and listeners) once after all updates are complete. This optimizes performance when you need to update multiple related state values.
+
+## Signature
+
+```typescript
+function batchUpdates(callback: VoidFunction): void
+```
+
+## Parameters
+
+<ParamField path="callback" type="VoidFunction" required>
+  Function that contains all the state updates you want to batch.
+  
+  - All state updates inside this function are batched
+  - Subscriptions are notified only after the callback completes
+  - If an error occurs, subscriptions are still triggered for successful updates
+</ParamField>
+
+## Return Value
+
+This method does not return a value (void).
+
+## Basic Example
+
+```javascript
+import { createStore } from '@codemask-labs/stan-js/vanilla'
+
+const store = createStore({
+  firstName: '',
+  lastName: '',
+  age: 0
+})
+
+let effectCount = 0
+store.effect(state => {
+  effectCount++
+  console.log(`Effect #${effectCount}:`, state.firstName, state.lastName, state.age)
+})
+// Logs: "Effect #1: '' '' 0"
+
+// Without batching - effect runs 3 times
+store.actions.setFirstName('John')
+// Logs: "Effect #2: John '' 0"
+store.actions.setLastName('Doe')
+// Logs: "Effect #3: John Doe 0"
+store.actions.setAge(30)
+// Logs: "Effect #4: John Doe 30"
+
+// Reset for next example
+store.reset()
+effectCount = 0
+
+// With batching - effect runs only once
+store.batchUpdates(() => {
+  store.actions.setFirstName('Jane')
+  store.actions.setLastName('Smith')
+  store.actions.setAge(25)
+})
+// Logs only: "Effect #1: Jane Smith 25"
+```
+
+## Performance Optimization
+
+Batching prevents unnecessary renders and computations:
+
+```javascript
+const store = createStore({
+  items: [],
+  selectedId: null,
+  isLoading: false,
+  error: null,
+  get selectedItem() {
+    return this.items.find(item => item.id === this.selectedId)
+  }
+})
+
+// Expensive computation only runs once
+store.effect(state => {
+  console.log('Computing selected item...')
+  console.log('Selected:', state.selectedItem)
+})
+
+// Without batching - effect runs 3 times
+store.actions.setItems([{ id: 1, name: 'A' }, { id: 2, name: 'B' }])
+store.actions.setSelectedId(1)
+store.actions.setIsLoading(false)
+
+// With batching - effect runs once
+store.batchUpdates(() => {
+  store.actions.setItems([{ id: 1, name: 'A' }, { id: 2, name: 'B' }])
+  store.actions.setSelectedId(1)
+  store.actions.setIsLoading(false)
+})
+```
+
+## Async Operations
+
+Handle data fetching with batched updates:
+
+```javascript
+const store = createStore({
+  users: [],
+  isLoading: false,
+  error: null
+})
+
+async function fetchUsers() {
+  store.batchUpdates(() => {
+    store.actions.setIsLoading(true)
+    store.actions.setError(null)
+  })
+  
+  try {
+    const response = await fetch('/api/users')
+    const users = await response.json()
+    
+    store.batchUpdates(() => {
+      store.actions.setUsers(users)
+      store.actions.setIsLoading(false)
+    })
+  } catch (error) {
+    store.batchUpdates(() => {
+      store.actions.setError(error.message)
+      store.actions.setIsLoading(false)
+    })
+  }
+}
+```
+
+## Form Handling
+
+Batch form field updates:
+
+```javascript
+const formStore = createStore({
+  username: '',
+  email: '',
+  password: '',
+  acceptTerms: false,
+  errors: {}
+})
+
+function handleFormSubmit(formData) {
+  formStore.batchUpdates(() => {
+    formStore.actions.setUsername(formData.username)
+    formStore.actions.setEmail(formData.email)
+    formStore.actions.setPassword(formData.password)
+    formStore.actions.setAcceptTerms(formData.acceptTerms)
+    formStore.actions.setErrors({})
+  })
+}
+
+function resetForm() {
+  formStore.batchUpdates(() => {
+    formStore.actions.setUsername('')
+    formStore.actions.setEmail('')
+    formStore.actions.setPassword('')
+    formStore.actions.setAcceptTerms(false)
+    formStore.actions.setErrors({})
+  })
+}
+```
+
+## Nested Batching
+
+Batch updates can be nested (outer batch takes precedence):
+
+```javascript
+const store = createStore({
+  a: 0,
+  b: 0,
+  c: 0
+})
+
+let effectCount = 0
+store.effect(() => {
+  effectCount++
+})
+
+store.batchUpdates(() => {
+  store.actions.setA(1)
+  
+  store.batchUpdates(() => {
+    store.actions.setB(2)
+    store.actions.setC(3)
+  })
+  
+  // Still in outer batch
+})
+
+console.log(effectCount) // 2 (initial + one batched update)
+```
+
+## Error Handling
+
+Updates before the error are still batched:
+
+```javascript
+const store = createStore({
+  step1: false,
+  step2: false,
+  step3: false
+})
+
+store.effect(state => {
+  console.log('State:', state)
+})
+
+try {
+  store.batchUpdates(() => {
+    store.actions.setStep1(true)
+    store.actions.setStep2(true)
+    throw new Error('Something went wrong')
+    store.actions.setStep3(true) // Never runs
+  })
+} catch (error) {
+  console.error(error.message)
+}
+// Effect runs once with step1: true, step2: true, step3: false
+```
+
+## Custom Actions Auto-Batch
+
+Custom actions automatically batch their updates:
+
+```javascript
+const store = createStore(
+  {
+    x: 0,
+    y: 0,
+    z: 0
+  },
+  ({ actions }) => ({
+    moveToOrigin: () => {
+      // These are automatically batched
+      actions.setX(0)
+      actions.setY(0)
+      actions.setZ(0)
+    },
+    move: (x, y, z) => {
+      // Also automatically batched
+      actions.setX(x)
+      actions.setY(y)
+      actions.setZ(z)
+    }
+  })
+)
+
+let effectCount = 0
+store.effect(() => {
+  effectCount++
+})
+
+store.actions.moveToOrigin()
+console.log(effectCount) // 2 (initial + one update)
+
+store.actions.move(10, 20, 30)
+console.log(effectCount) // 3 (one more update)
+```
+
+## Array Operations
+
+Batch multiple array modifications:
+
+```javascript
+const store = createStore({
+  items: [],
+  totalItems: 0,
+  lastUpdated: null
+})
+
+function addMultipleItems(newItems) {
+  store.batchUpdates(() => {
+    store.actions.setItems(prev => [...prev, ...newItems])
+    store.actions.setTotalItems(prev => prev + newItems.length)
+    store.actions.setLastUpdated(new Date().toISOString())
+  })
+}
+
+addMultipleItems([1, 2, 3, 4, 5])
+```
+
+## State Reconciliation
+
+Sync multiple state values together:
+
+```javascript
+const store = createStore({
+  cart: [],
+  itemCount: 0,
+  subtotal: 0,
+  tax: 0,
+  total: 0
+})
+
+function recalculateCart(items) {
+  const itemCount = items.length
+  const subtotal = items.reduce((sum, item) => sum + item.price, 0)
+  const tax = subtotal * 0.1
+  const total = subtotal + tax
+  
+  store.batchUpdates(() => {
+    store.actions.setCart(items)
+    store.actions.setItemCount(itemCount)
+    store.actions.setSubtotal(subtotal)
+    store.actions.setTax(tax)
+    store.actions.setTotal(total)
+  })
+}
+```
+
+## Reset Method Uses Batching
+
+The built-in `reset` method automatically batches updates:
+
+```javascript
+const store = createStore({
+  a: 1,
+  b: 2,
+  c: 3,
+  d: 4
+})
+
+let effectCount = 0
+store.effect(() => {
+  effectCount++
+})
+
+// Reset multiple values - automatically batched
+store.reset('a', 'b', 'c')
+console.log(effectCount) // 2 (initial + one batched reset)
+
+// Reset all - also batched
+store.reset()
+console.log(effectCount) // 3 (one more batched reset)
+```
+
+## DOM Updates
+
+Batch UI updates to prevent layout thrashing:
+
+```javascript
+const uiStore = createStore({
+  sidebar: 'collapsed',
+  theme: 'light',
+  fontSize: 14,
+  language: 'en'
+})
+
+uiStore.effect(state => {
+  // Expensive DOM operations
+  document.body.className = `theme-${state.theme} sidebar-${state.sidebar}`
+  document.documentElement.style.fontSize = `${state.fontSize}px`
+  document.documentElement.lang = state.language
+})
+
+// Update multiple UI settings at once
+function applyUserPreferences(prefs) {
+  uiStore.batchUpdates(() => {
+    if (prefs.sidebar) uiStore.actions.setSidebar(prefs.sidebar)
+    if (prefs.theme) uiStore.actions.setTheme(prefs.theme)
+    if (prefs.fontSize) uiStore.actions.setFontSize(prefs.fontSize)
+    if (prefs.language) uiStore.actions.setLanguage(prefs.language)
+  })
+}
+```
+
+## Type Safety
+
+TypeScript fully supports batchUpdates:
+
+```typescript
+interface State {
+  count: number
+  message: string
+  isActive: boolean
+}
+
+const store = createStore<State>({
+  count: 0,
+  message: '',
+  isActive: false
+})
+
+store.batchUpdates(() => {
+  store.actions.setCount(10)
+  store.actions.setMessage('Hello')
+  store.actions.setIsActive(true)
+  // store.actions.setInvalid('oops') // Type error
+})
+```
+
+## When to Use Batching
+
+Use `batchUpdates` when:
+
+- Updating multiple related state values
+- Handling form submissions
+- Processing API responses that affect multiple fields
+- Performing bulk operations on arrays
+- Resetting multiple values at once
+- Synchronizing computed values with their dependencies
+
+Don't bother batching:
+
+- Single state updates
+- Updates that happen at different times
+- When custom actions already batch for you
+
+## See Also
+
+- [createStore](/api/vanilla/create-store) - Create a vanilla store
+- [effect](/api/vanilla/effect) - Subscribe to state changes
+- [getState](/api/vanilla/get-state) - Access current state

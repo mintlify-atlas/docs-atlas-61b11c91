@@ -1,0 +1,292 @@
+---
+title: useStore
+description: React hook to access store state and actions with automatic subscriptions
+---
+
+## Overview
+
+The `useStore` hook provides access to store state and actions within React components. It automatically subscribes to only the state properties that are accessed, optimizing re-renders.
+
+## Signature
+
+```typescript
+function useStore(): TState & Actions<TState> & TCustomActions
+```
+
+## Parameters
+
+None. The hook is created by `createStore` and bound to that specific store instance.
+
+## Return Value
+
+Returns an object containing:
+
+<ResponseField name="state properties" type="TState">
+  All state properties from the store. Accessing a property automatically subscribes the component to changes for that property only.
+</ResponseField>
+
+<ResponseField name="actions" type="Actions<TState>">
+  All setter actions following the `set[PropertyName]` pattern. Each action accepts either a new value or an updater function.
+</ResponseField>
+
+<ResponseField name="custom actions" type="TCustomActions">
+  Any custom actions defined in the `customActionsBuilder` when creating the store.
+</ResponseField>
+
+## Behavior
+
+- **Automatic Subscriptions**: The component only re-renders when accessed state properties change
+- **Proxy-based**: Uses a Proxy to track which properties are accessed during render
+- **Action Stability**: Action functions are stable and don't cause re-renders when used
+- **Selective Updates**: Accessing only actions (not state) means the component never re-renders from state changes
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { createStore } from '@stan-js/react'
+
+const counterStore = createStore({
+  count: 0,
+  name: 'Counter'
+})
+
+function Counter() {
+  const { count, setCount } = counterStore.useStore()
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(prev => prev + 1)}>
+        Increment
+      </button>
+    </div>
+  )
+}
+```
+
+### Selective Subscriptions
+
+```typescript
+const store = createStore({
+  user: 'John',
+  theme: 'light',
+  count: 0
+})
+
+// Only subscribes to 'user'
+function UserDisplay() {
+  const { user } = store.useStore()
+  return <div>User: {user}</div>
+}
+
+// Only subscribes to 'theme'
+function ThemeToggle() {
+  const { theme, setTheme } = store.useStore()
+  return (
+    <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+      Theme: {theme}
+    </button>
+  )
+}
+
+// Changes to 'count' won't re-render either component above
+store.actions.setCount(5)
+```
+
+### Actions Only (No Re-renders)
+
+```typescript
+const store = createStore({
+  count: 0
+})
+
+// This component never re-renders from state changes
+// because it only accesses actions, not state
+function ResetButton() {
+  const { setCount } = store.useStore()
+  
+  return (
+    <button onClick={() => setCount(0)}>
+      Reset
+    </button>
+  )
+}
+```
+
+### With Computed Properties
+
+```typescript
+const store = createStore({
+  firstName: 'John',
+  lastName: 'Doe',
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`
+  }
+})
+
+function UserProfile() {
+  const { fullName, setFirstName, setLastName } = store.useStore()
+  
+  return (
+    <div>
+      <h1>{fullName}</h1>
+      <input 
+        placeholder="First name"
+        onChange={(e) => setFirstName(e.target.value)} 
+      />
+      <input 
+        placeholder="Last name"
+        onChange={(e) => setLastName(e.target.value)} 
+      />
+    </div>
+  )
+}
+```
+
+### With Custom Actions
+
+```typescript
+const cartStore = createStore(
+  {
+    items: [],
+    total: 0
+  },
+  ({ actions, getState }) => ({
+    addItem: (item: CartItem) => {
+      const state = getState()
+      actions.setItems([...state.items, item])
+      actions.setTotal(state.total + item.price)
+    },
+    clearCart: () => {
+      actions.setItems([])
+      actions.setTotal(0)
+    }
+  })
+)
+
+function ShoppingCart() {
+  const { items, total, addItem, clearCart } = cartStore.useStore()
+  
+  return (
+    <div>
+      <ul>
+        {items.map(item => (
+          <li key={item.id}>{item.name} - ${item.price}</li>
+        ))}
+      </ul>
+      <p>Total: ${total}</p>
+      <button onClick={clearCart}>Clear Cart</button>
+    </div>
+  )
+}
+```
+
+### With Storage Persistence
+
+```typescript
+import { storage } from '@stan-js/react'
+
+const settingsStore = createStore({
+  theme: storage('light'),
+  language: storage('en')
+})
+
+function Settings() {
+  const { theme, language, setTheme, setLanguage } = settingsStore.useStore()
+  
+  return (
+    <div>
+      <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+        <option value="en">English</option>
+        <option value="es">Spanish</option>
+      </select>
+    </div>
+  )
+}
+```
+
+### Multiple Stores
+
+```typescript
+const userStore = createStore({ name: 'John', email: 'john@example.com' })
+const settingsStore = createStore({ theme: 'light', notifications: true })
+
+function Profile() {
+  const { name, email } = userStore.useStore()
+  const { theme } = settingsStore.useStore()
+  
+  return (
+    <div className={theme}>
+      <h1>{name}</h1>
+      <p>{email}</p>
+    </div>
+  )
+}
+```
+
+## Performance Tips
+
+<Tip>
+  Only destructure the properties you need. Each destructured state property creates a subscription.
+</Tip>
+
+```typescript
+// Good: Only subscribes to 'count'
+const { count, setCount } = store.useStore()
+
+// Less optimal: Subscribes to all properties
+const state = store.useStore()
+```
+
+<Tip>
+  If you only need actions, only destructure actions to avoid unnecessary re-renders.
+</Tip>
+
+```typescript
+// This component never re-renders from state changes
+const { setCount } = store.useStore()
+```
+
+## Type Safety
+
+The hook is fully type-safe and infers the correct types from your store definition:
+
+```typescript
+const store = createStore({
+  count: 0,
+  user: { name: 'John', age: 30 }
+})
+
+function Component() {
+  const { count, user, setCount, setUser } = store.useStore()
+  
+  // TypeScript knows:
+  // count: number
+  // user: { name: string, age: number }
+  // setCount: (value: number | ((prev: number) => number)) => void
+  // setUser: (value: { name: string, age: number } | ((prev: ...) => ...)) => void
+}
+```
+
+## Comparison with useSyncExternalStore
+
+Under the hood, `useStore` uses React's `useSyncExternalStore` but provides several enhancements:
+
+- Automatic selective subscriptions (proxy-based)
+- Integrated actions in the return value
+- Optimized shallow equality checks
+- Support for computed properties
+
+## Notes
+
+- The hook must be called at the top level of your component (standard React rules)
+- Accessing a property in conditional logic will still create a subscription
+- The same store can be used in multiple components simultaneously
+- State updates are synchronous and immediately reflected
+- Computed properties automatically track their dependencies

@@ -1,0 +1,202 @@
+---
+title: Basic Counter
+description: A simple counter example demonstrating core Stan.js concepts
+---
+
+This example demonstrates the fundamental concepts of Stan.js with a simple counter application. You'll learn how to create a store, use auto-generated actions, and connect your components to state.
+
+## Live Demo
+
+<Card title="Try it on StackBlitz" icon="bolt" href="https://stackblitz.com/github/codemask-labs/stan-js/tree/main/examples/react">
+  Open the interactive demo in StackBlitz
+</Card>
+
+## Store Setup
+
+Create a store with a counter state. Stan.js automatically generates setter functions for all state properties.
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+
+export const { useStore, reset, getState, actions } = createStore({
+    counter: 0,
+})
+```
+
+<Note>
+The `createStore` function returns:
+- `useStore` - React hook to access state and actions
+- `reset` - Function to reset specific state keys to their initial values
+- `getState` - Function to get current state outside of React
+- `actions` - Object containing all auto-generated setter functions
+</Note>
+
+## Component Implementation
+
+Let's break down the counter into separate display and control components to demonstrate Stan.js's efficient subscription model.
+
+<Tabs>
+  <Tab title="Complete Example">
+    ```tsx App.tsx
+import { useStore, reset, getState } from './store'
+
+const CounterDisplay = () => {
+    const { counter } = useStore()
+
+    return <h2>{counter}</h2>
+}
+
+const CounterControls = () => {
+    const { setCounter } = useStore()
+
+    return (
+        <div>
+            <button onClick={() => setCounter(prev => prev - 1)}>
+                Decrement
+            </button>
+            <button onClick={() => setCounter(prev => prev + 1)}>
+                Increment
+            </button>
+            <button onClick={() => reset('counter')}>
+                Reset
+            </button>
+        </div>
+    )
+}
+
+export const App = () => (
+    <div>
+        <CounterDisplay />
+        <CounterControls />
+    </div>
+)
+    ```
+  </Tab>
+  <Tab title="Display Component">
+    ```tsx CounterDisplay.tsx
+import { useStore } from './store'
+
+const CounterDisplay = () => {
+    // Only re-renders when counter changes
+    const { counter } = useStore()
+
+    return <h2>{counter}</h2>
+}
+    ```
+
+    <Info>
+    This component only subscribes to `counter` changes. It won't re-render when other store properties update.
+    </Info>
+  </Tab>
+  <Tab title="Controls Component">
+    ```tsx CounterControls.tsx
+import { useStore, reset } from './store'
+
+const CounterControls = () => {
+    // Only subscribes to the setter function
+    const { setCounter } = useStore()
+
+    return (
+        <div>
+            <button onClick={() => setCounter(prev => prev - 1)}>
+                Decrement
+            </button>
+            <button onClick={() => setCounter(prev => prev + 1)}>
+                Increment
+            </button>
+            <button onClick={() => reset('counter')}>
+                Reset
+            </button>
+        </div>
+    )
+}
+    ```
+
+    <Tip>
+    Setter functions never change, so this component never re-renders due to state changes!
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Key Concepts
+
+### Auto-Generated Actions
+
+Stan.js automatically creates setter functions for every property in your store:
+
+```typescript
+const { setCounter } = useStore()
+
+// Set absolute value
+setCounter(10)
+
+// Update based on previous value
+setCounter(prev => prev + 1)
+```
+
+### Reset Functionality
+
+Reset any state property back to its initial value:
+
+```typescript
+import { reset } from './store'
+
+// Reset single property
+reset('counter')
+
+// Reset multiple properties
+reset('counter', 'message')
+
+// Reset entire store
+reset()
+```
+
+### Accessing State Outside React
+
+Use `getState()` to read current state values outside of React components:
+
+```typescript
+import { getState } from './store'
+
+const currentCounter = getState().counter
+console.log('Current counter:', currentCounter)
+```
+
+<Warning>
+`getState()` returns a snapshot of the current state. It doesn't subscribe to changes. Use it for one-time reads, not for rendering.
+</Warning>
+
+## Performance Benefits
+
+<AccordionGroup>
+  <Accordion title="Minimal Re-renders">
+    Components only re-render when the specific state properties they access change. In our example:
+    - `CounterDisplay` re-renders only when `counter` changes
+    - `CounterControls` never re-renders (setters don't change)
+  </Accordion>
+  
+  <Accordion title="No Provider Needed">
+    Unlike Context API or other state management solutions, Stan.js doesn't require wrapping your app in a Provider. Just import and use.
+  </Accordion>
+  
+  <Accordion title="TypeScript Inference">
+    Full TypeScript support with automatic type inference. Your IDE will autocomplete state properties and setter functions.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Todo List" icon="list-check" href="/examples/todo-list">
+    Learn about arrays, persistence, and complex state
+  </Card>
+  <Card title="Async Data" icon="cloud-arrow-down" href="/examples/async-data">
+    Handle async operations and loading states
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/create-store">
+    Explore all createStore options
+  </Card>
+  <Card title="Computed Values" icon="calculator" href="/concepts/computed-values">
+    Create derived state with getters
+  </Card>
+</CardGroup>

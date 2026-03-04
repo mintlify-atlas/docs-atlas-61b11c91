@@ -1,0 +1,117 @@
+---
+title: Installation
+description: Install stan-js in your project using your preferred package manager
+---
+
+Stan.js is a lightweight state management library that works with React, React Native, and vanilla JavaScript applications. Get started by installing the package using your preferred package manager.
+
+## Package Managers
+
+<CodeGroup>
+
+```bash npm
+npm install stan-js
+```
+
+```bash yarn
+yarn add stan-js
+```
+
+```bash pnpm
+pnpm add stan-js
+```
+
+```bash bun
+bun add stan-js
+```
+
+</CodeGroup>
+
+## Requirements
+
+Stan.js has minimal requirements and works out of the box with:
+
+- **React**: 18.2.0 or higher (optional)
+- **Node.js**: Any modern version supporting ES modules
+- **TypeScript**: Full TypeScript support with excellent IntelliSense
+
+<Note>
+  React is listed as an optional peer dependency. You can use stan-js in vanilla JavaScript projects without React.
+</Note>
+
+## Additional Packages
+
+Stan.js provides additional entry points for specific features:
+
+### Storage & Persistence
+
+For built-in data persistence using localStorage or React Native MMKV:
+
+```typescript
+import { storage } from 'stan-js/storage'
+```
+
+No additional installation required - this is included in the main package.
+
+### Vanilla JavaScript
+
+For using stan-js without React:
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+```
+
+### React Native MMKV (Optional)
+
+If you want to use MMKV storage in React Native applications:
+
+<CodeGroup>
+
+```bash npm
+npm install react-native-mmkv
+```
+
+```bash yarn
+yarn add react-native-mmkv
+```
+
+```bash pnpm
+pnpm add react-native-mmkv
+```
+
+```bash bun
+bun add react-native-mmkv
+```
+
+</CodeGroup>
+
+<Note>
+  `react-native-mmkv` is an optional peer dependency. Only install it if you're building a React Native app and want to use MMKV for storage.
+</Note>
+
+## Verify Installation
+
+After installation, verify that stan-js is properly installed by creating a simple store:
+
+```typescript
+import { createStore } from 'stan-js'
+
+const { useStore } = createStore({
+  count: 0
+})
+
+console.log('Stan.js is ready!')
+```
+
+If you see no errors, you're ready to start building with stan-js!
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Learn the basics with a complete quickstart tutorial
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/create-store">
+    Explore the full API documentation
+  </Card>
+</CardGroup>

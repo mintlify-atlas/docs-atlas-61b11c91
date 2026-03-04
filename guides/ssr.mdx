@@ -1,0 +1,491 @@
+---
+title: Server-Side Rendering
+description: Use Stan.js with Next.js, Remix, Astro, and other SSR frameworks
+---
+
+Stan.js is fully compatible with server-side rendering (SSR) and handles the complexities of hydration, storage, and state synchronization automatically.
+
+## Next.js App Router
+
+Next.js App Router uses Server Components by default. Stan.js works seamlessly with Client Components.
+
+### Basic Setup
+
+Create a scoped store for per-request state isolation:
+
+```typescript
+// store.ts
+'use client'
+
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0
+})
+```
+
+<Note>
+The `'use client'` directive is required for files using React hooks.
+</Note>
+
+### Server-Side Data Fetching
+
+Pass server-fetched data to the client via `initialValue`:
+
+```typescript
+// app/page.tsx
+import { StoreProvider } from './store'
+import { Counter } from './Counter'
+import { fetchUser } from './data'
+
+export default async function Page() {
+  const user = await fetchUser()
+
+  return (
+    <StoreProvider initialValue={{ user: user.name }}>
+      <main>
+        <h1>Hello {user.name}!</h1>
+        <Counter />
+      </main>
+    </StoreProvider>
+  )
+}
+```
+
+```typescript
+// Counter.tsx
+'use client'
+
+import { useStore } from './store'
+
+export const Counter = () => {
+  const { counter, setCounter, user } = useStore()
+
+  return (
+    <section>
+      <p>User: {user}</p>
+      <button onClick={() => setCounter(prev => prev - 1)}>-</button>
+      <span>{counter}</span>
+      <button onClick={() => setCounter(prev => prev + 1)}>+</button>
+    </section>
+  )
+}
+```
+
+### Layout with Provider
+
+Wrap your entire app with a provider in the root layout:
+
+```typescript
+// app/layout.tsx
+import { StoreProvider } from './store'
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <StoreProvider>
+          {children}
+        </StoreProvider>
+      </body>
+    </html>
+  )
+}
+```
+
+## Next.js Pages Router
+
+For the Pages Router, use `getServerSideProps` or `getStaticProps`:
+
+```typescript
+// pages/index.tsx
+import { GetServerSideProps } from 'next'
+import { StoreProvider } from '../store'
+import { Counter } from '../Counter'
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  const user = await fetchUser()
+  
+  return {
+    props: { user: user.name }
+  }
+}
+
+export default function Page({ user }: { user: string }) {
+  return (
+    <StoreProvider initialValue={{ user }}>
+      <Counter />
+    </StoreProvider>
+  )
+}
+```
+
+## Storage and SSR
+
+The `storage()` synchronizer handles SSR automatically:
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  theme: storage<'light' | 'dark'>('light'),
+  user: storage('')
+})
+```
+
+During SSR:
+1. Storage uses an in-memory Map (no `window.localStorage` access)
+2. Returns the initial value if nothing is stored
+3. Hydrates from localStorage on the client
+
+### Avoiding Hydration Mismatches
+
+To prevent React hydration warnings, wait for client-side mount:
+
+```typescript
+'use client'
+
+import { useStore } from './store'
+import { useEffect, useState } from 'react'
+
+export const ThemeSwitcher = () => {
+  const [mounted, setMounted] = useState(false)
+  const { theme, setTheme } = useStore()
+
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) {
+    // Render a placeholder during SSR
+    return <div className="w-10 h-10" />
+  }
+
+  return (
+    <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+      {theme === 'light' ? '🌙' : '☀️'}
+    </button>
+  )
+}
+```
+
+### useHydrateState for SSR
+
+For global stores, use `useHydrateState` to inject server data:
+
+```typescript
+// store.ts
+import { createStore } from 'stan-js'
+
+export const { useStore, useHydrateState } = createStore({
+  user: '',
+  counter: 0
+})
+```
+
+```typescript
+// page.tsx
+'use client'
+
+import { useHydrateState, useStore } from './store'
+
+export default function Page({ user }: { user: string }) {
+  useHydrateState({ user })
+  
+  const { user: currentUser } = useStore()
+  
+  return <div>Hello {currentUser}!</div>
+}
+```
+
+<Tip>
+`useHydrateState` only runs once on mount, making it perfect for initializing stores with SSR data.
+</Tip>
+
+## TanStack Start
+
+TanStack Start works similarly to Next.js:
+
+```typescript
+// app/store.ts
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0
+})
+```
+
+```typescript
+// app/routes/index.tsx
+import { StoreProvider, useStore } from '../store'
+import { fetchUser } from '../data'
+
+export default function Home() {
+  const user = useLoaderData() // TanStack Router loader
+
+  return (
+    <StoreProvider initialValue={{ user: user.name }}>
+      <Counter />
+    </StoreProvider>
+  )
+}
+```
+
+## Remix
+
+Use Remix loaders with scoped stores:
+
+```typescript
+// app/store.ts
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0
+})
+```
+
+```typescript
+// app/routes/_index.tsx
+import { json, LoaderFunctionArgs } from '@remix-run/node'
+import { useLoaderData } from '@remix-run/react'
+import { StoreProvider } from '../store'
+import { Counter } from '../components/Counter'
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const user = await fetchUser(request)
+  return json({ user: user.name })
+}
+
+export default function Index() {
+  const { user } = useLoaderData<typeof loader>()
+
+  return (
+    <StoreProvider initialValue={{ user }}>
+      <Counter />
+    </StoreProvider>
+  )
+}
+```
+
+## Astro
+
+Astro supports React components as islands:
+
+```typescript
+// src/store.ts
+import { createStore } from 'stan-js'
+
+export const { useStore } = createStore({
+  counter: 0
+})
+```
+
+```astro
+---
+// src/pages/index.astro
+import Counter from '../components/Counter.tsx'
+---
+
+<html>
+  <body>
+    <Counter client:load />
+  </body>
+</html>
+```
+
+```typescript
+// src/components/Counter.tsx
+import { useStore } from '../store'
+
+export default function Counter() {
+  const { counter, setCounter } = useStore()
+
+  return (
+    <div>
+      <button onClick={() => setCounter(prev => prev - 1)}>-</button>
+      <span>{counter}</span>
+      <button onClick={() => setCounter(prev => prev + 1)}>+</button>
+    </div>
+  )
+}
+```
+
+<Note>
+Use `client:load` or another [client directive](https://docs.astro.build/en/reference/directives-reference/#client-directives) to hydrate the component.
+</Note>
+
+## Per-Request State Isolation
+
+For multi-tenant or per-user state, use scoped stores:
+
+```typescript
+// layout.tsx (Next.js App Router)
+import { headers } from 'next/headers'
+import { StoreProvider } from './store'
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headersList = await headers()
+  const tenantId = headersList.get('x-tenant-id') ?? 'default'
+
+  return (
+    <html>
+      <body>
+        <StoreProvider initialValue={{ tenantId }}>
+          {children}
+        </StoreProvider>
+      </body>
+    </html>
+  )
+}
+```
+
+Each request gets its own isolated store instance.
+
+## Streaming and Suspense
+
+Stan.js works with React Suspense and streaming SSR:
+
+```typescript
+import { Suspense } from 'react'
+import { StoreProvider } from './store'
+
+export default function Page() {
+  return (
+    <StoreProvider>
+      <Suspense fallback={<div>Loading...</div>}>
+        <AsyncComponent />
+      </Suspense>
+    </StoreProvider>
+  )
+}
+```
+
+Providers can wrap Suspense boundaries without issues.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Scoped Stores for SSR" icon="layer-group">
+    Use `createScopedStore` for per-request isolation in SSR applications.
+  </Card>
+  <Card title="Avoid Global State on Server" icon="server">
+    Global stores persist across requests on the server. Use scoped stores for user-specific data.
+  </Card>
+  <Card title="Handle Hydration Carefully" icon="droplet">
+    Use the mounted pattern or `useHydrateState` to prevent mismatches between server and client.
+  </Card>
+  <Card title="Leverage Server Components" icon="bolt">
+    Fetch data in Server Components and pass it to Client Components via props or `initialValue`.
+  </Card>
+</CardGroup>
+
+## Debugging SSR Issues
+
+### Hydration Mismatch
+
+If you see:
+
+```
+Warning: Text content did not match. Server: "light" Client: "dark"
+```
+
+Cause: Storage value differs between server and client.
+
+Solution: Use the mounted pattern:
+
+```typescript
+const [mounted, setMounted] = useState(false)
+useEffect(() => setMounted(true), [])
+
+if (!mounted) return <Placeholder />
+```
+
+### Storage Not Available
+
+If storage values aren't persisting:
+
+1. Ensure `'use client'` is at the top of the file
+2. Check that `storage()` is called in the client, not server
+3. Verify localStorage is enabled in the browser
+
+## Example: Full Next.js App
+
+A complete Next.js example with SSR, storage, and scoped stores:
+
+```typescript
+// app/store.ts
+'use client'
+
+import { createScopedStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0,
+  theme: storage<'light' | 'dark'>('light')
+})
+```
+
+```typescript
+// app/layout.tsx
+import { StoreProvider } from './store'
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        <StoreProvider>
+          {children}
+        </StoreProvider>
+      </body>
+    </html>
+  )
+}
+```
+
+```typescript
+// app/page.tsx
+import { StoreProvider } from './store'
+import { Counter } from './Counter'
+
+export default async function Page() {
+  const user = await fetch('https://api.example.com/user').then(r => r.json())
+
+  return (
+    <main>
+      <h1>Welcome {user.name}</h1>
+      <Counter />
+    </main>
+  )
+}
+```
+
+```typescript
+// app/Counter.tsx
+'use client'
+
+import { useStore } from './store'
+import { useEffect, useState } from 'react'
+
+export const Counter = () => {
+  const [mounted, setMounted] = useState(false)
+  const { counter, setCounter, theme, setTheme } = useStore()
+
+  useEffect(() => setMounted(true), [])
+
+  return (
+    <div>
+      <p>Counter: {counter}</p>
+      <button onClick={() => setCounter(prev => prev + 1)}>+</button>
+      
+      {mounted && (
+        <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+          Theme: {theme}
+        </button>
+      )}
+    </div>
+  )
+}
+```

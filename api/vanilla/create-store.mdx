@@ -1,0 +1,218 @@
+---
+title: 'createStore'
+description: 'Create a vanilla JavaScript state store with reactive updates'
+---
+
+## Overview
+
+The `createStore` function creates a standalone state management store that works in any JavaScript environment without React. It provides reactive state updates, computed values, subscriptions, and custom actions.
+
+## Signature
+
+```typescript
+function createStore<TState extends object, TCustomActions extends CustomActions = {}>(
+  stateRaw: TState,
+  customActionsBuilder?: CustomActionsBuilder<TState, TCustomActions>
+): Store<TState, TCustomActions>
+```
+
+## Parameters
+
+<ParamField path="stateRaw" type="TState" required>
+  The initial state object for the store. Each property becomes a trackable state value.
+  
+  - Cannot contain functions as top-level values
+  - Supports computed properties using getters
+  - Supports synchronizers for persistence
+</ParamField>
+
+<ParamField path="customActionsBuilder" type="CustomActionsBuilder<TState, TCustomActions>">
+  Optional function to define custom actions that can update multiple state values at once.
+  
+  Receives an object with:
+  - `getState`: Function to get current state
+  - `actions`: Auto-generated setter actions
+  - `reset`: Function to reset state values
+  
+  Returns an object where each key is an action name and value is a function.
+</ParamField>
+
+## Return Value
+
+<ResponseField name="getState" type="() => TState">
+  Function that returns the current state of the store. See [getState](/api/vanilla/get-state) for details.
+</ResponseField>
+
+<ResponseField name="actions" type="Actions<TState> & TCustomActions">
+  Object containing auto-generated setter functions (like `setCount`) and any custom actions you defined.
+  
+  Each setter follows the pattern `set{PropertyName}` and accepts either:
+  - A new value directly
+  - A function that receives the previous value and returns the new value
+</ResponseField>
+
+<ResponseField name="effect" type="(run: (state: TState) => void) => () => void">
+  Subscribe to state changes with automatic dependency tracking. See [effect](/api/vanilla/effect) for details.
+</ResponseField>
+
+<ResponseField name="batchUpdates" type="(callback: VoidFunction) => void">
+  Batch multiple state updates to trigger listeners only once. See [batchUpdates](/api/vanilla/batch-updates) for details.
+</ResponseField>
+
+<ResponseField name="reset" type="(...keys: Array<keyof TState>) => void">
+  Reset specific state values (or all values if no keys provided) back to their initial values.
+</ResponseField>
+
+<ResponseField name="subscribe" type="(keys: Array<keyof TState>) => (listener: VoidFunction) => () => void">
+  Low-level subscription function that returns an unsubscribe function. Most use cases should use `effect` instead.
+</ResponseField>
+
+## Basic Example
+
+```javascript
+import { createStore } from '@codemask-labs/stan-js/vanilla'
+
+// Create a store
+const counterStore = createStore({
+  count: 0,
+  step: 1
+})
+
+// Get current state
+console.log(counterStore.getState().count) // 0
+
+// Update state with a value
+counterStore.actions.setCount(5)
+console.log(counterStore.getState().count) // 5
+
+// Update state with a function
+counterStore.actions.setCount(prev => prev + 1)
+console.log(counterStore.getState().count) // 6
+
+// Subscribe to changes
+const unsubscribe = counterStore.effect(state => {
+  console.log('Count changed:', state.count)
+})
+
+// Clean up subscription
+unsubscribe()
+```
+
+## Computed Values
+
+Use getters to create computed values that automatically update when dependencies change:
+
+```javascript
+const store = createStore({
+  firstName: 'John',
+  lastName: 'Doe',
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`
+  }
+})
+
+console.log(store.getState().fullName) // "John Doe"
+
+store.actions.setFirstName('Jane')
+console.log(store.getState().fullName) // "Jane Doe"
+
+// Note: Computed values don't have setters
+// store.actions.setFullName is undefined
+```
+
+## Custom Actions
+
+Create custom actions for complex state updates:
+
+```javascript
+const todoStore = createStore(
+  {
+    todos: [],
+    filter: 'all'
+  },
+  ({ getState, actions }) => ({
+    addTodo: (text) => {
+      const newTodo = {
+        id: Date.now(),
+        text,
+        completed: false
+      }
+      actions.setTodos([...getState().todos, newTodo])
+    },
+    toggleTodo: (id) => {
+      actions.setTodos(
+        getState().todos.map(todo =>
+          todo.id === id ? { ...todo, completed: !todo.completed } : todo
+        )
+      )
+    },
+    clearCompleted: () => {
+      actions.setTodos(
+        getState().todos.filter(todo => !todo.completed)
+      )
+    }
+  })
+)
+
+// Use custom actions
+todoStore.actions.addTodo('Learn Stan.js')
+todoStore.actions.toggleTodo(1234567890)
+todoStore.actions.clearCompleted()
+```
+
+## Reset State
+
+Reset values back to their initial state:
+
+```javascript
+const store = createStore({
+  count: 0,
+  name: 'Guest',
+  theme: 'light'
+})
+
+store.actions.setCount(10)
+store.actions.setName('Alice')
+store.actions.setTheme('dark')
+
+// Reset specific values
+store.reset('count', 'name')
+console.log(store.getState()) // { count: 0, name: 'Guest', theme: 'dark' }
+
+// Reset all values
+store.reset()
+console.log(store.getState()) // { count: 0, name: 'Guest', theme: 'light' }
+```
+
+## Type Safety
+
+TypeScript provides full type inference:
+
+```typescript
+import { createStore } from '@codemask-labs/stan-js/vanilla'
+
+interface UserState {
+  user: { id: number; name: string } | null
+  isLoading: boolean
+  error: string | null
+}
+
+const userStore = createStore<UserState>({
+  user: null,
+  isLoading: false,
+  error: null
+})
+
+// TypeScript knows the types
+userStore.actions.setUser({ id: 1, name: 'Alice' }) // ✓
+userStore.actions.setUser('invalid') // ✗ Type error
+
+const state = userStore.getState()
+const userId = state.user?.id // TypeScript knows user can be null
+```
+
+## See Also
+
+- [getState](/api/vanilla/get-state) - Access current state
+- [effect](/api/vanilla/effect) - Subscribe to changes
+- [batchUpdates](/api/vanilla/batch-updates) - Optimize multiple updates

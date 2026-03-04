@@ -1,0 +1,534 @@
+---
+title: React Native with MMKV
+description: Build React Native apps with high-performance MMKV storage
+---
+
+This example demonstrates how to use Stan.js in React Native applications with MMKV storage for fast, efficient persistence.
+
+## Why MMKV?
+
+MMKV is significantly faster than AsyncStorage:
+
+<CardGroup cols={3}>
+  <Card title="Lightning Fast" icon="bolt">
+    Up to 30x faster than AsyncStorage
+  </Card>
+  <Card title="Synchronous" icon="sync">
+    No async/await needed for reads
+  </Card>
+  <Card title="Type Safe" icon="shield">
+    Full TypeScript support built-in
+  </Card>
+</CardGroup>
+
+## Installation
+
+Install Stan.js and react-native-mmkv:
+
+<CodeGroup>
+```bash npm
+npm install stan-js react-native-mmkv
+```
+
+```bash yarn
+yarn add stan-js react-native-mmkv
+```
+
+```bash pnpm
+pnpm add stan-js react-native-mmkv
+```
+
+```bash bun
+bun add stan-js react-native-mmkv
+```
+</CodeGroup>
+
+<Note>
+For React Native, Stan.js automatically uses the MMKV storage adapter when you import from `stan-js/storage`.
+</Note>
+
+## Basic Setup
+
+Create a store with MMKV persistence:
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+type User = {
+    id: string
+    name: string
+    avatar: string
+}
+
+export const { useStore, getState, actions, reset } = createStore({
+    // Persisted to MMKV
+    user: storage<User | null>(null, {
+        storageKey: 'user',
+    }),
+    token: storage<string | null>(null, {
+        storageKey: 'auth-token',
+    }),
+    settings: storage({
+        theme: 'light' as 'light' | 'dark',
+        notifications: true,
+        language: 'en',
+    }, {
+        storageKey: 'app-settings',
+    }),
+    // Not persisted
+    isOnline: true,
+})
+```
+
+## React Native Component
+
+```tsx App.tsx
+import { View, Text, Button, Switch } from 'react-native'
+import { useStore } from './store'
+
+export const App = () => {
+    const { user, settings, setSettings } = useStore()
+
+    const toggleTheme = () => {
+        setSettings(prev => ({
+            ...prev,
+            theme: prev.theme === 'light' ? 'dark' : 'light',
+        }))
+    }
+
+    return (
+        <View style={{ flex: 1, backgroundColor: settings.theme === 'dark' ? '#000' : '#fff' }}>
+            <Text>Welcome {user?.name ?? 'Guest'}!</Text>
+            
+            <View>
+                <Text>Dark Mode</Text>
+                <Switch
+                    value={settings.theme === 'dark'}
+                    onValueChange={toggleTheme}
+                />
+            </View>
+            
+            <View>
+                <Text>Notifications</Text>
+                <Switch
+                    value={settings.notifications}
+                    onValueChange={enabled =>
+                        setSettings(prev => ({ ...prev, notifications: enabled }))
+                    }
+                />
+            </View>
+        </View>
+    )
+}
+```
+
+## Custom MMKV Instance
+
+Create a custom MMKV instance with encryption:
+
+```typescript customStorage.ts
+import { MMKV } from 'react-native-mmkv'
+import { createStorage } from 'stan-js/storage'
+
+// Create encrypted MMKV instance
+const mmkvInstance = new MMKV({
+    id: 'user-data',
+    encryptionKey: 'your-encryption-key',
+})
+
+// Create storage with custom MMKV instance
+export const secureStorage = createStorage({
+    mmkvInstance,
+})
+```
+
+Use the secure storage in your store:
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+import { secureStorage } from './customStorage'
+
+export const { useStore } = createStore({
+    sensitiveData: secureStorage({
+        creditCard: '',
+        ssn: '',
+    }),
+})
+```
+
+## Authentication Example
+
+<Tabs>
+  <Tab title="Store">
+    ```typescript auth.ts
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+type AuthState = {
+    token: string | null
+    user: {
+        id: string
+        email: string
+        name: string
+    } | null
+    isAuthenticated: boolean
+}
+
+export const { useStore, getState, actions } = createStore({
+    token: storage<string | null>(null, {
+        storageKey: 'auth-token',
+    }),
+    user: storage<AuthState['user']>(null, {
+        storageKey: 'user-data',
+    }),
+    get isAuthenticated() {
+        return this.token !== null && this.user !== null
+    },
+})
+
+export const login = async (email: string, password: string) => {
+    try {
+        const response = await fetch('https://api.example.com/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        })
+
+        const { token, user } = await response.json()
+
+        actions.setToken(token)
+        actions.setUser(user)
+
+        return true
+    } catch (error) {
+        console.error('Login failed:', error)
+        return false
+    }
+}
+
+export const logout = () => {
+    actions.setToken(null)
+    actions.setUser(null)
+}
+    ```
+  </Tab>
+  <Tab title="Login Screen">
+    ```tsx LoginScreen.tsx
+import { useState } from 'react'
+import { View, TextInput, Button, Text } from 'react-native'
+import { login } from './auth'
+
+export const LoginScreen = () => {
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [error, setError] = useState('')
+
+    const handleLogin = async () => {
+        setError('')
+        const success = await login(email, password)
+        
+        if (!success) {
+            setError('Invalid credentials')
+        }
+    }
+
+    return (
+        <View>
+            <TextInput
+                placeholder="Email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+            />
+            <TextInput
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+            />
+            {error && <Text style={{ color: 'red' }}>{error}</Text>}
+            <Button title="Login" onPress={handleLogin} />
+        </View>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Protected Screen">
+    ```tsx ProfileScreen.tsx
+import { View, Text, Button } from 'react-native'
+import { useStore, logout } from './auth'
+
+export const ProfileScreen = () => {
+    const { user, isAuthenticated } = useStore()
+
+    if (!isAuthenticated) {
+        return <Text>Please log in</Text>
+    }
+
+    return (
+        <View>
+            <Text>Name: {user.name}</Text>
+            <Text>Email: {user.email}</Text>
+            <Button title="Logout" onPress={logout} />
+        </View>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Navigation Guard">
+    ```tsx Navigation.tsx
+import { NavigationContainer } from '@react-navigation/native'
+import { createNativeStackNavigator } from '@react-navigation/native-stack'
+import { useStore } from './auth'
+import { LoginScreen } from './LoginScreen'
+import { ProfileScreen } from './ProfileScreen'
+
+const Stack = createNativeStackNavigator()
+
+export const Navigation = () => {
+    const { isAuthenticated } = useStore()
+
+    return (
+        <NavigationContainer>
+            <Stack.Navigator>
+                {isAuthenticated ? (
+                    <Stack.Screen name="Profile" component={ProfileScreen} />
+                ) : (
+                    <Stack.Screen name="Login" component={LoginScreen} />
+                )}
+            </Stack.Navigator>
+        </NavigationContainer>
+    )
+}
+    ```
+  </Tab>
+</Tabs>
+
+## Storage Configuration
+
+### Multiple MMKV Instances
+
+Organize data into separate MMKV instances:
+
+```typescript storage.ts
+import { MMKV } from 'react-native-mmkv'
+import { createStorage } from 'stan-js/storage'
+
+// User data storage
+const userMMKV = new MMKV({ id: 'user-storage' })
+export const userStorage = createStorage({ mmkvInstance: userMMKV })
+
+// Cache storage (can be cleared)
+const cacheMMKV = new MMKV({ id: 'cache-storage' })
+export const cacheStorage = createStorage({ mmkvInstance: cacheMMKV })
+
+// Secure storage with encryption
+const secureMMKV = new MMKV({
+    id: 'secure-storage',
+    encryptionKey: 'your-encryption-key',
+})
+export const secureStorage = createStorage({ mmkvInstance: secureMMKV })
+```
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+import { userStorage, cacheStorage, secureStorage } from './storage'
+
+export const { useStore } = createStore({
+    user: userStorage(null),
+    recentSearches: cacheStorage([]),
+    credentials: secureStorage({ pin: '' }),
+})
+```
+
+### Custom Serialization
+
+Handle complex data types:
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+
+export const dateStorage = createStorage({
+    serialize: (value: Date) => value.toISOString(),
+    deserialize: (value: string) => new Date(value),
+})
+
+export const { useStore } = createStore({
+    lastLogin: dateStorage(new Date()),
+})
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Batch Updates">
+    ```typescript
+    // Bad: Multiple storage writes
+    actions.setName('John')
+    actions.setEmail('john@example.com')
+    actions.setAge(30)
+
+    // Good: Single storage write
+    actions.setUser({
+        name: 'John',
+        email: 'john@example.com',
+        age: 30,
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Selective Persistence">
+    ```typescript
+    // Only persist what's needed
+    const { useStore } = createStore({
+        user: storage({ name: '', email: '' }), // Persisted
+        isLoading: false, // Not persisted - ephemeral state
+        error: null, // Not persisted
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Clear Cache">
+    ```typescript
+    import { MMKV } from 'react-native-mmkv'
+
+    const cache = new MMKV({ id: 'cache' })
+
+    // Clear all cached data
+    export const clearCache = () => {
+        cache.clearAll()
+    }
+
+    // Clear specific keys
+    export const clearSearchHistory = () => {
+        cache.delete('search-history')
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Migration">
+    ```typescript
+    import { storage } from 'stan-js/storage'
+
+    type Settings = {
+        theme: 'light' | 'dark'
+        version: number
+    }
+
+    export const { useStore } = createStore({
+        settings: storage<Settings>(
+            { theme: 'light', version: 1 },
+            {
+                deserialize: (value) => {
+                    const parsed = JSON.parse(value)
+                    
+                    // Migrate old version
+                    if (!parsed.version || parsed.version < 2) {
+                        return {
+                            ...parsed,
+                            theme: parsed.darkMode ? 'dark' : 'light',
+                            version: 2,
+                        }
+                    }
+                    
+                    return parsed
+                },
+            }
+        ),
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### App Theme
+
+```typescript theme.ts
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+import { useColorScheme } from 'react-native'
+
+export const { useStore } = createStore({
+    theme: storage<'light' | 'dark' | 'auto'>('auto'),
+})
+
+export const useTheme = () => {
+    const { theme } = useStore()
+    const systemTheme = useColorScheme()
+
+    const activeTheme = theme === 'auto' ? systemTheme : theme
+
+    return {
+        theme: activeTheme,
+        isDark: activeTheme === 'dark',
+    }
+}
+```
+
+### Offline Queue
+
+```typescript offline.ts
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+import NetInfo from '@react-native-community/netinfo'
+
+type QueuedRequest = {
+    id: string
+    url: string
+    method: string
+    body: any
+    timestamp: number
+}
+
+export const { useStore, actions } = createStore({
+    queue: storage<QueuedRequest[]>([]),
+    isOnline: true,
+})
+
+// Listen to network status
+NetInfo.addEventListener(state => {
+    actions.setIsOnline(state.isConnected ?? false)
+    
+    if (state.isConnected) {
+        processQueue()
+    }
+})
+
+const processQueue = async () => {
+    const { queue } = getState()
+    
+    for (const request of queue) {
+        try {
+            await fetch(request.url, {
+                method: request.method,
+                body: JSON.stringify(request.body),
+            })
+            
+            // Remove from queue
+            actions.setQueue(prev => prev.filter(r => r.id !== request.id))
+        } catch (error) {
+            console.error('Failed to process request:', error)
+        }
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Basic Counter" icon="gauge" href="/examples/basic-counter">
+    Learn Stan.js fundamentals
+  </Card>
+  <Card title="Async Data" icon="cloud-arrow-down" href="/examples/async-data">
+    Handle async operations
+  </Card>
+  <Card title="Storage API" icon="database" href="/api/storage">
+    Explore storage options
+  </Card>
+  <Card title="React Native Docs" icon="mobile" href="https://reactnative.dev">
+    Official React Native documentation
+  </Card>
+</CardGroup>

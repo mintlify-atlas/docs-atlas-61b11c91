@@ -1,0 +1,300 @@
+---
+title: StoreProvider
+description: Provider component for scoped store instances
+---
+
+## Overview
+
+`StoreProvider` is a React component returned by `createScopedStore` that provides a store instance to its children via React Context. It allows you to create isolated store instances for different parts of your component tree.
+
+## Type Definition
+
+```typescript
+type StoreProviderProps<TState extends object> = {
+  initialValue?: Partial<RemoveReadonly<TState>>
+  children: ReactNode
+}
+
+type StoreProvider<TState> = FunctionComponent<StoreProviderProps<TState>>
+```
+
+## Props
+
+<ParamField path="initialValue" type="Partial<RemoveReadonly<TState>>">
+  Optional initial values to merge with the base initial state. This allows you to customize the initial state for each provider instance.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  React children that will have access to this store instance.
+</ParamField>
+
+## Usage
+
+### Basic Provider
+
+```tsx
+import { createScopedStore } from '@stan-js/react'
+
+const { StoreProvider, useStore } = createScopedStore({
+  count: 0,
+  label: 'Counter'
+})
+
+function App() {
+  return (
+    <StoreProvider>
+      <Counter />
+    </StoreProvider>
+  )
+}
+
+function Counter() {
+  const { count, actions } = useStore()
+  return <button onClick={() => actions.setCount(count + 1)}>{count}</button>
+}
+```
+
+### With Initial Value
+
+```tsx
+const { StoreProvider, useStore } = createScopedStore({
+  name: '',
+  email: '',
+  role: 'user'
+})
+
+function App() {
+  return (
+    <StoreProvider
+      initialValue={{
+        name: 'John Doe',
+        email: 'john@example.com'
+      }}
+    >
+      <UserForm />
+    </StoreProvider>
+  )
+}
+```
+
+### Multiple Instances
+
+```tsx
+const { StoreProvider, useStore } = createScopedStore({
+  title: '',
+  content: '',
+  isDirty: false
+})
+
+function App() {
+  return (
+    <div>
+      <h2>Edit Post 1</h2>
+      <StoreProvider
+        initialValue={{
+          title: 'First Post',
+          content: 'Content 1'
+        }}
+      >
+        <Editor />
+      </StoreProvider>
+
+      <h2>Edit Post 2</h2>
+      <StoreProvider
+        initialValue={{
+          title: 'Second Post',
+          content: 'Content 2'
+        }}
+      >
+        <Editor />
+      </StoreProvider>
+    </div>
+  )
+}
+
+function Editor() {
+  const { title, content, isDirty, actions } = useStore()
+  
+  return (
+    <div>
+      <input
+        value={title}
+        onChange={(e) => {
+          actions.setTitle(e.target.value)
+          actions.setIsDirty(true)
+        }}
+      />
+      <textarea
+        value={content}
+        onChange={(e) => {
+          actions.setContent(e.target.value)
+          actions.setIsDirty(true)
+        }}
+      />
+      {isDirty && <span>Unsaved changes</span>}
+    </div>
+  )
+}
+```
+
+## Implementation Details
+
+### Store Creation
+
+The provider creates a store instance on mount using `useState`:
+
+```typescript
+const [store] = useState(() => 
+  createStore(mergeState(initialState, initialValue ?? {}))
+)
+```
+
+This ensures:
+- The store is created only once per provider instance
+- Initial values are merged with the base initial state
+- Each provider has its own isolated store
+
+### Dynamic Initial Value Updates
+
+When `initialValue` prop changes, the provider updates the store:
+
+```typescript
+const isMounted = useRef(false)
+
+useEffect(() => {
+  if (!isMounted.current) {
+    isMounted.current = true
+    return
+  }
+
+  store.batchUpdates(() =>
+    Object.entries(initialValue ?? {}).forEach(([key, value]) => {
+      store.actions[getActionKey(key)](value)
+    })
+  )
+}, [initialValue])
+```
+
+The `isMounted` ref prevents updates on the initial render, only updating when the prop actually changes.
+
+### Context Provider
+
+The component renders a React Context Provider:
+
+```typescript
+return <StoreContext.Provider children={children} value={store} />
+```
+
+## Common Patterns
+
+### Controlled Initial State
+
+```tsx
+function UserEditor({ userId }: { userId: string }) {
+  const [userData, setUserData] = useState(null)
+  
+  useEffect(() => {
+    fetchUser(userId).then(setUserData)
+  }, [userId])
+  
+  if (!userData) return <Loading />
+  
+  return (
+    <StoreProvider
+      initialValue={{
+        name: userData.name,
+        email: userData.email
+      }}
+    >
+      <EditForm />
+    </StoreProvider>
+  )
+}
+```
+
+### Nested Providers
+
+```tsx
+const { StoreProvider: AppStoreProvider } = createScopedStore({
+  theme: 'light',
+  user: null
+})
+
+const { StoreProvider: FormStoreProvider } = createScopedStore({
+  formData: {},
+  errors: {}
+})
+
+function App() {
+  return (
+    <AppStoreProvider initialValue={{ theme: 'dark' }}>
+      <FormStoreProvider>
+        <MyForm />
+      </FormStoreProvider>
+    </AppStoreProvider>
+  )
+}
+```
+
+### List of Providers
+
+```tsx
+function TaskList({ tasks }: { tasks: Task[] }) {
+  return (
+    <div>
+      {tasks.map(task => (
+        <StoreProvider
+          key={task.id}
+          initialValue={{
+            title: task.title,
+            completed: task.completed
+          }}
+        >
+          <TaskItem />
+        </StoreProvider>
+      ))}
+    </div>
+  )
+}
+```
+
+### Conditional Provider
+
+```tsx
+function ConditionalProvider({ useScoped, children }) {
+  if (useScoped) {
+    return (
+      <StoreProvider initialValue={{ isolated: true }}>
+        {children}
+      </StoreProvider>
+    )
+  }
+  
+  return <>{children}</>
+}
+```
+
+## Performance Considerations
+
+### Memoization
+
+If `initialValue` is an object literal, consider memoizing it:
+
+```tsx
+// Bad - creates new object on every render
+<StoreProvider initialValue={{ name: 'John' }}>
+
+// Good - stable reference
+const initialValue = useMemo(() => ({ name: 'John' }), [])
+<StoreProvider initialValue={initialValue}>
+```
+
+### Batch Updates
+
+The provider uses `batchUpdates` when applying initial value changes to prevent multiple re-renders.
+
+## See Also
+
+- [createScopedStore](/api/scoped/create-scoped-store) - Create scoped stores
+- [withStore](/api/scoped/with-store) - HOC alternative to StoreProvider
+- [createStore](/api/create-store) - Base store creation

@@ -1,0 +1,373 @@
+---
+title: 'effect'
+description: 'Subscribe to state changes with automatic dependency tracking'
+---
+
+## Overview
+
+The `effect` method creates a subscription that automatically tracks which state properties you access and re-runs when those properties change. It's the recommended way to react to state changes in vanilla JavaScript.
+
+## Signature
+
+```typescript
+function effect(run: (state: TState) => void): () => void
+```
+
+## Parameters
+
+<ParamField path="run" type="(state: TState) => void" required>
+  Callback function that runs immediately and whenever tracked dependencies change.
+  
+  - Receives the current state as a parameter
+  - Automatically tracks which properties you access
+  - Re-runs only when accessed properties change
+  - Can return cleanup logic (not captured)
+</ParamField>
+
+## Return Value
+
+<ResponseField name="unsubscribe" type="() => void">
+  Function to stop the effect and clean up the subscription.
+  
+  Call this when you're done listening to state changes to prevent memory leaks.
+</ResponseField>
+
+## How Dependency Tracking Works
+
+The effect uses a Proxy to track which state properties you access during the first run:
+
+```javascript
+const store = createStore({
+  count: 0,
+  name: 'Alice',
+  theme: 'light'
+})
+
+// This effect only tracks 'count' because that's the only property accessed
+store.effect(state => {
+  console.log('Count is:', state.count)
+})
+
+// This triggers the effect
+store.actions.setCount(1) // Logs: "Count is: 1"
+
+// These don't trigger the effect (different properties)
+store.actions.setName('Bob') // No log
+store.actions.setTheme('dark') // No log
+```
+
+## Basic Example
+
+```javascript
+import { createStore } from '@codemask-labs/stan-js/vanilla'
+
+const store = createStore({
+  count: 0
+})
+
+const unsubscribe = store.effect(state => {
+  console.log('Count changed to:', state.count)
+})
+// Immediately logs: "Count changed to: 0"
+
+store.actions.setCount(1)
+// Logs: "Count changed to: 1"
+
+store.actions.setCount(2)
+// Logs: "Count changed to: 2"
+
+// Clean up when done
+unsubscribe()
+
+store.actions.setCount(3)
+// No log (unsubscribed)
+```
+
+## Multiple Dependencies
+
+Access multiple properties to track all of them:
+
+```javascript
+const store = createStore({
+  firstName: 'John',
+  lastName: 'Doe',
+  age: 30
+})
+
+store.effect(state => {
+  console.log(`${state.firstName} ${state.lastName} is ${state.age} years old`)
+})
+// Logs: "John Doe is 30 years old"
+
+store.actions.setFirstName('Jane')
+// Logs: "Jane Doe is 30 years old"
+
+store.actions.setAge(31)
+// Logs: "Jane Doe is 31 years old"
+```
+
+## Conditional Dependencies
+
+Only properties accessed during the first run are tracked:
+
+```javascript
+const store = createStore({
+  showAdvanced: false,
+  basicSetting: 'A',
+  advancedSetting: 'X'
+})
+
+store.effect(state => {
+  console.log('Basic:', state.basicSetting)
+  
+  if (state.showAdvanced) {
+    console.log('Advanced:', state.advancedSetting)
+  }
+})
+// Initially: showAdvanced is false, so advancedSetting is NOT tracked
+
+// This triggers the effect
+store.actions.setBasicSetting('B')
+
+// This does NOT trigger the effect (not accessed in first run)
+store.actions.setAdvancedSetting('Y')
+
+// Note: If you toggle showAdvanced, you need a new effect to track it
+```
+
+## DOM Updates
+
+Use effects to update the DOM:
+
+```javascript
+const store = createStore({
+  count: 0,
+  status: 'idle'
+})
+
+// Update counter display
+store.effect(state => {
+  const element = document.getElementById('counter')
+  if (element) {
+    element.textContent = state.count
+  }
+})
+
+// Update status indicator
+store.effect(state => {
+  const element = document.getElementById('status')
+  if (element) {
+    element.className = `status-${state.status}`
+    element.textContent = state.status
+  }
+})
+```
+
+## Side Effects
+
+Trigger side effects when state changes:
+
+```javascript
+const store = createStore({
+  searchQuery: '',
+  filters: [],
+  sortBy: 'date'
+})
+
+store.effect(state => {
+  // Trigger search when query or filters change
+  if (state.searchQuery) {
+    fetch(`/api/search?q=${state.searchQuery}&filters=${state.filters.join(',')}`)
+      .then(res => res.json())
+      .then(results => {
+        store.actions.setResults(results)
+      })
+  }
+})
+```
+
+## Local Storage Sync
+
+```javascript
+const store = createStore({
+  theme: 'light',
+  language: 'en',
+  notifications: true
+})
+
+// Persist settings to localStorage
+store.effect(state => {
+  const settings = {
+    theme: state.theme,
+    language: state.language,
+    notifications: state.notifications
+  }
+  localStorage.setItem('settings', JSON.stringify(settings))
+})
+```
+
+## Computed Logging
+
+Track computed values:
+
+```javascript
+const store = createStore({
+  items: [],
+  get itemCount() {
+    return this.items.length
+  },
+  get hasItems() {
+    return this.items.length > 0
+  }
+})
+
+store.effect(state => {
+  console.log('Item count:', state.itemCount)
+  console.log('Has items:', state.hasItems)
+})
+
+store.actions.setItems([1, 2, 3])
+// Logs:
+// "Item count: 3"
+// "Has items: true"
+```
+
+## Cleanup Pattern
+
+Manage subscriptions with cleanup:
+
+```javascript
+const store = createStore({
+  isActive: false
+})
+
+let intervalId
+
+const unsubscribe = store.effect(state => {
+  if (state.isActive) {
+    // Start interval when active
+    intervalId = setInterval(() => {
+      console.log('Tick...')
+    }, 1000)
+  } else {
+    // Clear interval when inactive
+    if (intervalId) {
+      clearInterval(intervalId)
+      intervalId = null
+    }
+  }
+})
+
+// Don't forget to clean up the effect itself
+function cleanup() {
+  unsubscribe()
+  if (intervalId) {
+    clearInterval(intervalId)
+  }
+}
+```
+
+## No Dependencies (Listen to All)
+
+If you don't access any properties, the effect listens to all changes:
+
+```javascript
+const store = createStore({
+  a: 1,
+  b: 2,
+  c: 3
+})
+
+store.effect(() => {
+  // Not accessing state.anything
+  console.log('Store updated!')
+})
+
+// All of these trigger the effect
+store.actions.setA(10)
+store.actions.setB(20)
+store.actions.setC(30)
+```
+
+## Multiple Effects
+
+Create multiple independent effects:
+
+```javascript
+const store = createStore({
+  count: 0,
+  message: ''
+})
+
+const unsubscribe1 = store.effect(state => {
+  console.log('Count effect:', state.count)
+})
+
+const unsubscribe2 = store.effect(state => {
+  console.log('Message effect:', state.message)
+})
+
+store.actions.setCount(5)
+// Only logs: "Count effect: 5"
+
+store.actions.setMessage('Hello')
+// Only logs: "Message effect: Hello"
+
+// Clean up both
+unsubscribe1()
+unsubscribe2()
+```
+
+## Type Safety
+
+TypeScript provides full type inference:
+
+```typescript
+interface State {
+  user: { id: number; name: string } | null
+  isLoading: boolean
+}
+
+const store = createStore<State>({
+  user: null,
+  isLoading: false
+})
+
+store.effect(state => {
+  // TypeScript knows the types
+  const userId: number | undefined = state.user?.id
+  const loading: boolean = state.isLoading
+  
+  if (state.user) {
+    console.log('Logged in as:', state.user.name)
+  }
+})
+```
+
+## Performance Tip
+
+Effects only run when tracked properties change. Be mindful of what you access:
+
+```javascript
+const store = createStore({
+  bigArray: Array(1000).fill(0).map((_, i) => ({ id: i })),
+  selectedId: 0
+})
+
+// ❌ Inefficient - runs on any bigArray change
+store.effect(state => {
+  const selected = state.bigArray.find(item => item.id === state.selectedId)
+  console.log('Selected:', selected)
+})
+
+// ✓ Better - only runs when selectedId changes
+store.effect(state => {
+  console.log('Selected ID:', state.selectedId)
+})
+```
+
+## See Also
+
+- [createStore](/api/vanilla/create-store) - Create a vanilla store
+- [getState](/api/vanilla/get-state) - Access current state
+- [batchUpdates](/api/vanilla/batch-updates) - Batch multiple updates

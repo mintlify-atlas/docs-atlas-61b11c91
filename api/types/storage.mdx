@@ -1,0 +1,304 @@
+---
+title: 'Storage'
+description: 'Storage type and configuration options for persistent state'
+---
+
+## Overview
+
+The `Storage` type defines the interface for persistent state values, while `StorageOptions` and `CreateStorageOptions` provide configuration for serialization and storage behavior.
+
+## Storage Type
+
+```typescript
+type Storage = {
+    <T>(initialValue: T, options?: StorageOptions<T>): T
+    <T>(initialValue?: T, options?: StorageOptions<T>): T | undefined
+}
+```
+
+The `Storage` type is a function overload that returns either a typed value or a potentially undefined value, depending on whether an initial value is provided.
+
+### Type Signatures
+
+**With Initial Value:**
+```typescript
+<T>(initialValue: T, options?: StorageOptions<T>): T
+```
+When an initial value is provided, the return type is guaranteed to be `T`.
+
+**Without Initial Value:**
+```typescript
+<T>(initialValue?: T, options?: StorageOptions<T>): T | undefined
+```
+When no initial value is provided, the return type is `T | undefined`.
+
+## StorageOptions
+
+```typescript
+type StorageOptions<T> = {
+    storageKey?: string
+    deserialize?: (value: string) => T
+    serialize?: (value: T) => string
+}
+```
+
+Configuration options for individual storage values.
+
+### Properties
+
+#### storageKey (optional)
+
+```typescript
+storageKey?: string
+```
+
+Custom key to use for storing this value. If not provided, Stan.js will generate a key based on the property name.
+
+#### deserialize (optional)
+
+```typescript
+deserialize?: (value: string) => T
+```
+
+Custom deserialization function to convert stored string values back to the typed value. Useful for complex types like `Date`, `Map`, `Set`, etc.
+
+**Parameters:**
+- `value`: The string value retrieved from storage
+
+**Returns:** The deserialized typed value
+
+#### serialize (optional)
+
+```typescript
+serialize?: (value: T) => string
+```
+
+Custom serialization function to convert the typed value to a string for storage. Pairs with `deserialize`.
+
+**Parameters:**
+- `value`: The typed value to serialize
+
+**Returns:** A string representation of the value
+
+## CreateStorageOptions
+
+```typescript
+type CreateStorageOptions = {
+    mmkvInstance?: MMKV
+    deserialize?: (value: string) => unknown
+    serialize?: (value: unknown) => string
+}
+```
+
+Global configuration options for the `createStorage` function.
+
+### Properties
+
+#### mmkvInstance (optional)
+
+```typescript
+mmkvInstance?: MMKV
+```
+
+Custom MMKV instance to use for storage. If not provided, a default instance will be created.
+
+#### deserialize (optional)
+
+```typescript
+deserialize?: (value: string) => unknown
+```
+
+Global deserialization function applied to all stored values unless overridden at the value level.
+
+#### serialize (optional)
+
+```typescript
+serialize?: (value: unknown) => string
+```
+
+Global serialization function applied to all stored values unless overridden at the value level.
+
+## Usage Examples
+
+### Basic Storage with Initial Value
+
+```typescript
+import { create, createStorage } from '@robosentient/stan'
+
+const storage = createStorage()
+
+const useStore = create({
+  // Type is inferred as number (guaranteed)
+  count: storage(0),
+  
+  // Type is inferred as string (guaranteed)
+  username: storage('guest'),
+  
+  // Type is inferred as boolean (guaranteed)
+  isDarkMode: storage(true)
+})
+```
+
+### Storage Without Initial Value
+
+```typescript
+import { create, createStorage } from '@robosentient/stan'
+
+const storage = createStorage()
+
+const useStore = create({
+  // Type is string | undefined
+  userId: storage<string>(),
+  
+  // Type is number | undefined
+  lastLogin: storage<number>()
+})
+
+// In component
+function Profile() {
+  const userId = useStore((state) => state.userId)
+  
+  // TypeScript knows userId might be undefined
+  if (userId === undefined) {
+    return <Login />
+  }
+  
+  return <UserProfile id={userId} />
+}
+```
+
+### Custom Storage Key
+
+```typescript
+const storage = createStorage()
+
+const useStore = create({
+  theme: storage('light', { 
+    storageKey: 'app_theme_v2' 
+  })
+})
+```
+
+### Custom Serialization for Date
+
+```typescript
+const storage = createStorage()
+
+const useStore = create({
+  lastVisit: storage(new Date(), {
+    serialize: (date) => date.toISOString(),
+    deserialize: (str) => new Date(str)
+  })
+})
+```
+
+### Custom Serialization for Map
+
+```typescript
+interface CacheEntry {
+  value: string
+  timestamp: number
+}
+
+const storage = createStorage()
+
+const useStore = create({
+  cache: storage(new Map<string, CacheEntry>(), {
+    serialize: (map) => JSON.stringify(Array.from(map.entries())),
+    deserialize: (str) => new Map(JSON.parse(str))
+  })
+})
+```
+
+### Global Serialization with Custom MMKV
+
+```typescript
+import { MMKV } from 'react-native-mmkv'
+import { createStorage } from '@robosentient/stan'
+
+const mmkv = new MMKV({
+  id: 'my-app-storage',
+  encryptionKey: 'my-secret-key'
+})
+
+const storage = createStorage({
+  mmkvInstance: mmkv,
+  serialize: (value) => JSON.stringify(value),
+  deserialize: (str) => JSON.parse(str)
+})
+
+const useStore = create({
+  user: storage({ id: '', name: '' }),
+  settings: storage({ notifications: true })
+})
+```
+
+### Combining Global and Local Options
+
+```typescript
+const storage = createStorage({
+  // Global serialization
+  serialize: (value) => JSON.stringify(value),
+  deserialize: (str) => JSON.parse(str)
+})
+
+const useStore = create({
+  // Uses global serialization
+  settings: storage({ theme: 'dark' }),
+  
+  // Overrides with custom Date serialization
+  createdAt: storage(new Date(), {
+    serialize: (date) => date.toISOString(),
+    deserialize: (str) => new Date(str)
+  })
+})
+```
+
+## Type Inference
+
+Stan.js automatically infers types based on the initial value:
+
+```typescript
+const storage = createStorage()
+
+// Explicit type annotation
+const store1 = create({
+  count: storage<number>(0) // Type: number
+})
+
+// Inferred from initial value
+const store2 = create({
+  count: storage(0) // Type: number (inferred)
+})
+
+// Complex type inference
+interface User {
+  id: string
+  name: string
+  age: number
+}
+
+const store3 = create({
+  user: storage<User>({ id: '1', name: 'John', age: 30 }) // Type: User
+})
+
+// Optional type
+const store4 = create({
+  token: storage<string>() // Type: string | undefined
+})
+```
+
+## Best Practices
+
+1. **Provide Initial Values**: Use initial values when possible to avoid dealing with `undefined`
+2. **Custom Keys**: Use descriptive `storageKey` values for better debugging
+3. **Version Keys**: Include version in storage keys when data structure changes
+4. **Type Safety**: Ensure `serialize` and `deserialize` are properly typed
+5. **Error Handling**: Handle deserialization errors gracefully
+6. **Complex Types**: Always provide custom serialization for `Date`, `Map`, `Set`, etc.
+
+## Related
+
+- [createStorage()](/api/storage/create-storage) - Function to create storage instances
+- [Synchronizer](/api/types/synchronizer) - Type for external synchronization
+- [Persistence Guide](/guides/persistence) - Learn more about persistent storage

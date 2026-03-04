@@ -1,0 +1,207 @@
+---
+title: 'Synchronizer'
+description: 'Type interface for external state synchronization'
+---
+
+## Overview
+
+The `Synchronizer<T>` type defines the contract for synchronizing Stan.js state with external data sources. This enables real-time updates from sources like WebSockets, Firebase, or other reactive systems.
+
+## Type Definition
+
+```typescript
+type Synchronizer<T> = {
+    value: T
+    subscribe?: (update: (value: T) => void, key: string) => void
+    getSnapshot: (key: string) => T | Promise<T>
+    update: (value: T, key: string) => void
+}
+```
+
+## Properties
+
+### value
+
+```typescript
+value: T
+```
+
+The current value of the synchronized state. This represents the initial or current state that will be used by the store.
+
+### subscribe (optional)
+
+```typescript
+subscribe?: (update: (value: T) => void, key: string) => void
+```
+
+Optional subscription function that allows the synchronizer to push updates to the store. When external data changes, call the `update` callback with the new value.
+
+**Parameters:**
+- `update`: Callback function to update the store with a new value
+- `key`: The storage key associated with this state
+
+### getSnapshot
+
+```typescript
+getSnapshot: (key: string) => T | Promise<T>
+```
+
+Retrieves the current snapshot of the synchronized state. Can return the value synchronously or as a Promise for async data sources.
+
+**Parameters:**
+- `key`: The storage key to retrieve the snapshot for
+
+**Returns:** The current state value, either directly or wrapped in a Promise
+
+### update
+
+```typescript
+update: (value: T, key: string) => void
+```
+
+Updates the external data source when the local state changes. This ensures bidirectional synchronization.
+
+**Parameters:**
+- `value`: The new value to sync to the external source
+- `key`: The storage key being updated
+
+## Usage Examples
+
+### Basic Synchronizer
+
+```typescript
+import { create, synchronize } from '@robosentient/stan'
+
+interface User {
+  id: string
+  name: string
+}
+
+const userSynchronizer: Synchronizer<User> = {
+  value: { id: '1', name: 'John' },
+  
+  getSnapshot: (key) => {
+    // Fetch from external source
+    return { id: '1', name: 'John' }
+  },
+  
+  update: (value, key) => {
+    // Persist to external source
+    console.log('Updating external source:', key, value)
+  }
+}
+
+const useStore = create({
+  user: synchronize(userSynchronizer)
+})
+```
+
+### WebSocket Synchronizer
+
+```typescript
+import { Synchronizer } from '@robosentient/stan'
+
+function createWebSocketSync<T>(url: string, initialValue: T): Synchronizer<T> {
+  const ws = new WebSocket(url)
+  
+  return {
+    value: initialValue,
+    
+    subscribe: (update, key) => {
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        if (data.key === key) {
+          update(data.value)
+        }
+      }
+    },
+    
+    getSnapshot: (key) => {
+      // Return current value or fetch from server
+      return initialValue
+    },
+    
+    update: (value, key) => {
+      ws.send(JSON.stringify({ key, value }))
+    }
+  }
+}
+
+const useStore = create({
+  messages: synchronize(
+    createWebSocketSync('ws://localhost:8080', [])
+  )
+})
+```
+
+### Async Synchronizer with Firebase
+
+```typescript
+import { Synchronizer } from '@robosentient/stan'
+import { ref, onValue, set } from 'firebase/database'
+
+function createFirebaseSync<T>(
+  path: string,
+  initialValue: T
+): Synchronizer<T> {
+  const dbRef = ref(database, path)
+  
+  return {
+    value: initialValue,
+    
+    subscribe: (update, key) => {
+      onValue(dbRef, (snapshot) => {
+        update(snapshot.val())
+      })
+    },
+    
+    getSnapshot: async (key) => {
+      const snapshot = await get(dbRef)
+      return snapshot.val() || initialValue
+    },
+    
+    update: (value, key) => {
+      set(dbRef, value)
+    }
+  }
+}
+
+const useStore = create({
+  settings: synchronize(
+    createFirebaseSync('/settings', { theme: 'dark' })
+  )
+})
+```
+
+## Type Inference
+
+The generic type `T` is automatically inferred from the `value` property:
+
+```typescript
+// Type is inferred as Synchronizer<number>
+const numberSync: Synchronizer<number> = {
+  value: 42,
+  getSnapshot: () => 42,
+  update: (val) => console.log(val)
+}
+
+// Type is inferred as Synchronizer<{ count: number }>
+const objectSync = {
+  value: { count: 0 },
+  getSnapshot: () => ({ count: 0 }),
+  update: (val) => console.log(val)
+} satisfies Synchronizer<{ count: number }>
+```
+
+## Best Practices
+
+1. **Error Handling**: Always handle errors in async `getSnapshot` implementations
+2. **Cleanup**: Implement cleanup in `subscribe` if your data source requires it
+3. **Type Safety**: Use explicit type parameters for complex types
+4. **Bidirectional Sync**: Ensure `update` properly persists changes to prevent data loss
+5. **Initial Value**: Provide a sensible default in the `value` property
+
+## Related
+
+- [synchronize()](/api/types/synchronizer) - Function to create synchronized state
+- [Storage](/api/types/storage) - Storage type for persistent state

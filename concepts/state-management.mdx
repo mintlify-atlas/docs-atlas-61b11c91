@@ -1,0 +1,532 @@
+---
+title: 'State Management'
+description: 'Patterns and best practices for managing state in Stan.js'
+---
+
+## State Management Philosophy
+
+Stan.js takes a pragmatic approach to state management:
+
+- **Simplicity first** - No boilerplate or complex patterns required
+- **Type-safe** - Full TypeScript support with automatic type inference
+- **Flexible** - Works with React, vanilla JS, or any framework
+- **Performant** - Automatic optimization through selective subscriptions
+
+## Basic State Updates
+
+### Direct Updates
+
+The simplest way to update state is using auto-generated actions:
+
+```typescript
+const { actions } = createStore({
+  count: 0,
+  user: { name: 'John', age: 30 },
+})
+
+// Update primitive values
+actions.setCount(5)
+
+// Update objects (replaces entire object)
+actions.setUser({ name: 'Jane', age: 25 })
+```
+
+### Functional Updates
+
+For updates based on previous state, use the functional form:
+
+```typescript
+// Increment counter
+actions.setCount(prev => prev + 1)
+
+// Update object property
+actions.setUser(prev => ({ ...prev, age: prev.age + 1 }))
+```
+
+<Warning>
+  When updating objects or arrays, always create a new reference. Mutating the existing object won't trigger updates:
+  
+  ```typescript
+  // ✗ Wrong - mutation won't trigger updates
+  const user = getState().user
+  user.age = 31
+  actions.setUser(user)
+  
+  // ✓ Correct - new reference triggers update
+  actions.setUser(prev => ({ ...prev, age: 31 }))
+  ```
+</Warning>
+
+## Batch Updates
+
+When making multiple state changes, use `batchUpdates` to notify subscribers only once:
+
+```typescript
+const { actions, batchUpdates } = createStore({
+  firstName: '',
+  lastName: '',
+  email: '',
+})
+
+// Without batching: triggers 3 re-renders
+actions.setFirstName('John')
+actions.setLastName('Doe')
+actions.setEmail('john@example.com')
+
+// With batching: triggers 1 re-render
+batchUpdates(() => {
+  actions.setFirstName('John')
+  actions.setLastName('Doe')
+  actions.setEmail('john@example.com')
+})
+```
+
+### How Batching Works
+
+From `src/vanilla/createStore.ts:71-82`, batching works by collecting update notifications:
+
+```typescript
+const batchUpdates = (callback: VoidFunction) => {
+  try {
+    batchedKeys.clear()
+    isBatching = true
+    callback()
+  } finally {
+    batchedKeys.forEach(key => {
+      listeners[key]?.forEach(listener => listener(state[key as TKey]))
+    })
+    isBatching = false
+  }
+}
+```
+
+<Info>
+  Custom actions automatically wrap their execution in `batchUpdates`, so you don't need to manually batch when using them.
+</Info>
+
+## Custom Actions
+
+For complex state logic, create custom actions:
+
+```typescript
+const store = createStore(
+  {
+    todos: [] as Array<{ id: number; text: string; done: boolean }>,
+    filter: 'all' as 'all' | 'active' | 'completed',
+  },
+  ({ getState, actions }) => ({
+    addTodo: (text: string) => {
+      const newTodo = {
+        id: Date.now(),
+        text,
+        done: false,
+      }
+      actions.setTodos([...getState().todos, newTodo])
+    },
+    
+    toggleTodo: (id: number) => {
+      actions.setTodos(
+        getState().todos.map(todo =>
+          todo.id === id ? { ...todo, done: !todo.done } : todo
+        )
+      )
+    },
+    
+    clearCompleted: () => {
+      actions.setTodos(
+        getState().todos.filter(todo => !todo.done)
+      )
+    },
+  })
+)
+
+// Use custom actions
+const { addTodo, toggleTodo, clearCompleted } = store.actions
+
+addTodo('Learn Stan.js')
+toggleTodo(1)
+clearCompleted()
+```
+
+### Custom Action Benefits
+
+<CardGroup cols={2}>
+  <Card title="Encapsulation" icon="box">
+    Hide complex state logic behind simple function calls
+  </Card>
+  <Card title="Reusability" icon="arrows-rotate">
+    Share logic across components without duplication
+  </Card>
+  <Card title="Auto-batching" icon="bolt">
+    All updates are automatically batched for performance
+  </Card>
+  <Card title="Type Safety" icon="shield">
+    Full TypeScript support with parameter type checking
+  </Card>
+</CardGroup>
+
+## Managing Arrays
+
+### Adding Items
+
+```typescript
+const { actions, getState } = createStore({
+  items: [] as Array<string>,
+})
+
+// Add single item
+actions.setItems([...getState().items, 'new item'])
+
+// Add multiple items
+actions.setItems([...getState().items, 'item1', 'item2'])
+
+// Add at beginning
+actions.setItems(['first', ...getState().items])
+```
+
+### Removing Items
+
+```typescript
+// Remove by index
+actions.setItems(prev => prev.filter((_, i) => i !== indexToRemove))
+
+// Remove by value
+actions.setItems(prev => prev.filter(item => item !== valueToRemove))
+
+// Remove by condition
+actions.setItems(prev => prev.filter(item => item.active))
+```
+
+### Updating Items
+
+```typescript
+const { actions } = createStore({
+  users: [] as Array<{ id: number; name: string; active: boolean }>,
+})
+
+// Update single item
+actions.setUsers(prev =>
+  prev.map(user =>
+    user.id === targetId
+      ? { ...user, name: 'New Name' }
+      : user
+  )
+)
+
+// Update multiple items
+actions.setUsers(prev =>
+  prev.map(user =>
+    user.active ? { ...user, status: 'online' } : user
+  )
+)
+```
+
+## Managing Objects
+
+### Partial Updates
+
+```typescript
+const { actions, getState } = createStore({
+  user: {
+    name: 'John',
+    age: 30,
+    email: 'john@example.com',
+    preferences: {
+      theme: 'dark',
+      notifications: true,
+    },
+  },
+})
+
+// Update single property
+actions.setUser(prev => ({ ...prev, age: 31 }))
+
+// Update nested property
+actions.setUser(prev => ({
+  ...prev,
+  preferences: {
+    ...prev.preferences,
+    theme: 'light',
+  },
+}))
+```
+
+<Note>
+  For deeply nested objects, consider using a library like [immer](https://immerjs.github.io/immer/) to simplify updates, or flatten your state structure.
+</Note>
+
+## Equality Checking
+
+Stan.js uses shallow equality checking to prevent unnecessary updates and re-renders:
+
+```typescript
+// From src/utils.ts:16-41
+export const equal = <T>(a: T, b: T) => {
+  if (Object.is(a, b)) {
+    return true
+  }
+
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime()
+  }
+
+  if (
+    typeof a !== 'object'
+    || a === null
+    || typeof b !== 'object'
+    || b === null
+  ) {
+    return false
+  }
+
+  const keysA = Object.keys(a) as Array<keyof T>
+
+  if (keysA.length !== Object.keys(b).length) {
+    return false
+  }
+
+  return keysA.every(key => 
+    Object.is(a[key], b[key]) && 
+    Object.prototype.hasOwnProperty.call(b, key)
+  )
+}
+```
+
+### What Gets Checked
+
+- **Primitives**: Uses `Object.is()` for exact equality
+- **Dates**: Compares timestamps using `getTime()`
+- **Objects**: Shallow comparison of all properties
+- **Arrays**: Treated as objects, compares each index
+
+<Warning>
+  Deep equality is **not** performed. Nested object changes must create a new parent reference:
+  
+  ```typescript
+  const { actions, getState } = createStore({
+    data: { nested: { value: 1 } },
+  })
+  
+  // ✗ Won't trigger update (same reference)
+  const data = getState().data
+  data.nested.value = 2
+  actions.setData(data)
+  
+  // ✓ Triggers update (new reference)
+  actions.setData(prev => ({
+    ...prev,
+    nested: { ...prev.nested, value: 2 },
+  }))
+  ```
+</Warning>
+
+## Asynchronous State
+
+### Loading States
+
+```typescript
+const { actions, getState } = createStore({
+  users: [] as Array<User>,
+  isLoading: false,
+  error: null as string | null,
+})
+
+const fetchUsers = async () => {
+  actions.setIsLoading(true)
+  actions.setError(null)
+  
+  try {
+    const response = await fetch('/api/users')
+    const users = await response.json()
+    actions.setUsers(users)
+  } catch (error) {
+    actions.setError(error.message)
+  } finally {
+    actions.setIsLoading(false)
+  }
+}
+```
+
+### Using Custom Actions
+
+```typescript
+const store = createStore(
+  {
+    users: [] as Array<User>,
+    isLoading: false,
+    error: null as string | null,
+  },
+  ({ actions }) => ({
+    fetchUsers: async () => {
+      actions.setIsLoading(true)
+      actions.setError(null)
+      
+      try {
+        const response = await fetch('/api/users')
+        const users = await response.json()
+        actions.setUsers(users)
+      } catch (error) {
+        actions.setError(error.message)
+      } finally {
+        actions.setIsLoading(false)
+      }
+    },
+  })
+)
+
+// Usage
+store.actions.fetchUsers()
+```
+
+## State Patterns
+
+### Feature-based State
+
+```typescript
+// Good: Organize by feature
+const authStore = createStore({
+  user: null as User | null,
+  token: '',
+  isAuthenticated: false,
+})
+
+const todoStore = createStore({
+  todos: [] as Array<Todo>,
+  filter: 'all',
+})
+```
+
+### Normalized State
+
+For complex relational data:
+
+```typescript
+const store = createStore({
+  users: {} as Record<number, User>,
+  posts: {} as Record<number, Post>,
+  comments: {} as Record<number, Comment>,
+})
+
+// Add data
+actions.setUsers(prev => ({
+  ...prev,
+  [user.id]: user,
+}))
+
+// Access by ID
+const user = getState().users[userId]
+```
+
+### Derived State Pattern
+
+```typescript
+const store = createStore({
+  todos: [] as Array<Todo>,
+  filter: 'all' as Filter,
+  
+  // Derived state using getters
+  get filteredTodos() {
+    const { todos, filter } = this
+    if (filter === 'active') return todos.filter(t => !t.done)
+    if (filter === 'completed') return todos.filter(t => t.done)
+    return todos
+  },
+  
+  get stats() {
+    const total = this.todos.length
+    const completed = this.todos.filter(t => t.done).length
+    const active = total - completed
+    return { total, completed, active }
+  },
+})
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep State Minimal">
+    Only store what you can't derive. Use getters for computed values:
+    
+    ```typescript
+    // ✗ Bad - storing derived state
+    const store = createStore({
+      firstName: 'John',
+      lastName: 'Doe',
+      fullName: 'John Doe', // Redundant!
+    })
+    
+    // ✓ Good - derive from source of truth
+    const store = createStore({
+      firstName: 'John',
+      lastName: 'Doe',
+      get fullName() {
+        return `${this.firstName} ${this.lastName}`
+      },
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Type Assertions">
+    TypeScript can't always infer array/object types. Use `as` to specify:
+    
+    ```typescript
+    const store = createStore({
+      items: [] as Array<string>, // ✓
+      users: [] as User[], // ✓
+      data: {} as Record<string, any>, // ✓
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Batch Related Updates">
+    Use `batchUpdates` for multiple state changes:
+    
+    ```typescript
+    // ✗ Multiple re-renders
+    actions.setLoading(false)
+    actions.setData(result)
+    actions.setError(null)
+    
+    // ✓ Single re-render
+    batchUpdates(() => {
+      actions.setLoading(false)
+      actions.setData(result)
+      actions.setError(null)
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Encapsulate Complex Logic">
+    Use custom actions for operations involving multiple state changes:
+    
+    ```typescript
+    const store = createStore(
+      { /* state */ },
+      ({ actions }) => ({
+        complexOperation: () => {
+          // Multiple state updates
+          // Business logic
+          // Side effects
+        },
+      })
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Subscriptions" href="/concepts/subscriptions" icon="bell">
+    Learn how to react to state changes
+  </Card>
+  <Card title="Computed Values" href="/concepts/computed-values" icon="function">
+    Master derived state with getters
+  </Card>
+  <Card title="Custom Actions" href="/api/types/custom-actions" icon="wrench">
+    Create reusable action logic
+  </Card>
+  <Card title="Persistence" href="/guides/persistence" icon="database">
+    Persist state across sessions
+  </Card>
+</CardGroup>

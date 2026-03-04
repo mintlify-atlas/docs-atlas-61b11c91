@@ -1,0 +1,265 @@
+---
+title: storage
+description: Pre-configured storage wrapper for persisting state in localStorage (web) or MMKV (React Native)
+---
+
+The `storage` function is a pre-configured wrapper that provides cross-platform state persistence. It automatically uses `localStorage` on web platforms and MMKV on React Native.
+
+## Import
+
+<CodeGroup>
+
+```typescript Web
+import { storage } from 'stan-js/storage'
+```
+
+```typescript React Native
+import { storage } from 'stan-js/storage/native'
+```
+
+</CodeGroup>
+
+## Usage
+
+Use `storage` within `createStore` to persist specific state values:
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  // Persisted value with default
+  theme: storage('light'),
+  
+  // Persisted value with custom storage key
+  user: storage('', { storageKey: 'currentUser' }),
+  
+  // Persisted with custom serialization
+  settings: storage(
+    { notifications: true },
+    {
+      serialize: (value) => JSON.stringify(value),
+      deserialize: (value) => JSON.parse(value)
+    }
+  ),
+  
+  // Non-persisted value
+  tempData: ''
+})
+```
+
+## Signature
+
+```typescript
+function storage<T>(
+  initialValue: T,
+  options?: StorageOptions<T>
+): Synchronizer<T>
+```
+
+## Parameters
+
+<ParamField path="initialValue" type="T" required>
+  The default value to use when no stored value exists. This value is returned on the first load before any data is persisted.
+</ParamField>
+
+<ParamField path="options" type="StorageOptions<T>">
+  Configuration options for storage behavior.
+  
+  <Expandable title="StorageOptions properties">
+    <ParamField path="storageKey" type="string">
+      Custom key for storing the value. By default, the property name from the store is used.
+      
+      ```typescript
+      // Stored under key "currentUser" instead of "user"
+      user: storage('', { storageKey: 'currentUser' })
+      ```
+    </ParamField>
+    
+    <ParamField path="serialize" type="(value: T) => string">
+      Custom function to serialize the value before storing. Defaults to `JSON.stringify`.
+      
+      ```typescript
+      settings: storage(
+        new Date(),
+        { serialize: (date) => date.toISOString() }
+      )
+      ```
+    </ParamField>
+    
+    <ParamField path="deserialize" type="(value: string) => T">
+      Custom function to deserialize the stored value. Defaults to `JSON.parse`.
+      
+      ```typescript
+      settings: storage(
+        new Date(),
+        { deserialize: (str) => new Date(str) }
+      )
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+A `Synchronizer<T>` object that manages the persistence lifecycle. This is used internally by stan-js and you typically don't interact with it directly.
+
+## Platform Behavior
+
+### Web (localStorage)
+
+- Stores data in browser's `localStorage`
+- Automatically syncs across browser tabs via `storage` events
+- Falls back to in-memory storage during SSR or when localStorage is unavailable
+- Handles privacy mode gracefully
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  theme: storage('light'),
+  preferences: storage({ lang: 'en' })
+})
+```
+
+### React Native (MMKV)
+
+- Uses [react-native-mmkv](https://github.com/mrousavy/react-native-mmkv) for fast, secure storage
+- Requires `react-native-mmkv` to be installed
+- Compatible with both MMKV v2 and v3
+
+```typescript
+import { storage } from 'stan-js/storage/native'
+
+export const { useStore } = createStore({
+  authToken: storage(''),
+  userSettings: storage({ notifications: true })
+})
+```
+
+<Note>
+  Make sure to install `react-native-mmkv` when using storage in React Native:
+  ```bash
+  npm install react-native-mmkv
+  ```
+</Note>
+
+## Examples
+
+### Basic Persistence
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+const { useStore } = createStore({
+  theme: storage('light'),
+  username: storage('')
+})
+
+function ThemeToggle() {
+  const { theme, setTheme } = useStore()
+  
+  return (
+    <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+      Current theme: {theme}
+    </button>
+  )
+}
+```
+
+### Custom Storage Key
+
+```typescript
+const { useStore } = createStore({
+  // Stored under "app_user" key instead of "user"
+  user: storage(
+    { name: '', email: '' },
+    { storageKey: 'app_user' }
+  )
+})
+```
+
+### Custom Serialization
+
+```typescript
+const { useStore } = createStore({
+  lastVisit: storage(
+    new Date(),
+    {
+      serialize: (date) => date.toISOString(),
+      deserialize: (str) => new Date(str)
+    }
+  ),
+  
+  // Using a custom serialization library
+  complexData: storage(
+    { items: [], metadata: {} },
+    {
+      serialize: (value) => msgpack.encode(value),
+      deserialize: (value) => msgpack.decode(value)
+    }
+  )
+})
+```
+
+### SSR-Safe Usage
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+// Safe to use in Next.js and other SSR frameworks
+const { useStore } = createStore({
+  theme: storage('light'),
+  cart: storage([])
+})
+
+// On the server, values fall back to initialValue
+// On the client, values are loaded from localStorage
+```
+
+## Cross-Tab Synchronization
+
+On web platforms, the storage helper automatically synchronizes state across browser tabs:
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+const { useStore } = createStore({
+  sharedState: storage({ count: 0 })
+})
+
+function Counter() {
+  const { sharedState, setSharedState } = useStore()
+  
+  // When this updates, all open tabs will receive the new value
+  return (
+    <button onClick={() => setSharedState(prev => ({ count: prev.count + 1 }))}>
+      Count: {sharedState.count}
+    </button>
+  )
+}
+```
+
+<Note>
+  Cross-tab synchronization only works on web (localStorage). React Native MMKV storage is app-instance specific.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="createStorage" icon="wrench" href="/api/storage/create-storage">
+    Create custom storage instances with different configurations
+  </Card>
+  <Card title="MMKV Integration" icon="mobile" href="/api/storage/mmkv">
+    Advanced MMKV configuration for React Native
+  </Card>
+  <Card title="Persistence Guide" icon="book" href="/guides/persistence">
+    Complete guide to data persistence patterns
+  </Card>
+  <Card title="Synchronizer Type" icon="code" href="/api/types/synchronizer">
+    TypeScript interface for storage synchronizers
+  </Card>
+</CardGroup>

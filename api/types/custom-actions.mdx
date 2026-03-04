@@ -1,0 +1,391 @@
+---
+title: 'CustomActions'
+description: 'Types for defining custom actions and action builders'
+---
+
+## Overview
+
+The `CustomActions` and `CustomActionsBuilder` types enable you to define custom state update logic beyond the default setter actions. This is useful for complex state updates, computed actions, or business logic.
+
+## CustomActions
+
+```typescript
+type CustomActions = Record<string, (...args: Array<never>) => void>
+```
+
+A record type representing custom actions. Each key is an action name, and each value is a function that can accept any arguments and returns `void`.
+
+### Characteristics
+
+- **Flexible Signature**: Actions can accept any number of arguments of any type
+- **Void Return**: Actions modify state but don't return values
+- **Record Structure**: Simple key-value mapping of action names to functions
+
+## CustomActionsBuilder
+
+```typescript
+type CustomActionsBuilder<TState extends object, TCustomActions extends CustomActions> = (
+    builderParams: CustomActionsBuilderParams<TState>,
+) => TCustomActions
+```
+
+A function type that receives builder parameters and returns custom actions.
+
+### Type Parameters
+
+- `TState`: The state object type
+- `TCustomActions`: The custom actions object type extending `CustomActions`
+
+### Parameters
+
+Receives a single `builderParams` object with the following properties:
+
+```typescript
+type CustomActionsBuilderParams<TState extends object> = {
+    getState: () => TState
+    actions: Actions<RemoveReadonly<TState>>
+    reset: (...keys: Array<keyof RemoveReadonly<TState>>) => void
+}
+```
+
+## CustomActionsBuilderParams
+
+### getState
+
+```typescript
+getState: () => TState
+```
+
+Function to retrieve the current state. Use this to access current values when computing new state.
+
+**Returns:** The complete current state object
+
+### actions
+
+```typescript
+actions: Actions<RemoveReadonly<TState>>
+```
+
+Object containing all generated setter actions (e.g., `setCount`, `setUsername`). Use these to update individual state properties.
+
+### reset
+
+```typescript
+reset: (...keys: Array<keyof RemoveReadonly<TState>>) => void
+```
+
+Function to reset one or more state properties to their initial values.
+
+**Parameters:**
+- `keys`: Variable number of state keys to reset
+
+## Usage Examples
+
+### Basic Custom Actions
+
+```typescript
+import { create } from '@robosentient/stan'
+
+interface State {
+  count: number
+  name: string
+}
+
+interface CustomActions {
+  increment: () => void
+  decrement: () => void
+  resetCount: () => void
+}
+
+const useStore = create(
+  { count: 0, name: 'Counter' },
+  ({ getState, actions, reset }): CustomActions => ({
+    increment: () => {
+      const current = getState().count
+      actions.setCount(current + 1)
+    },
+    
+    decrement: () => {
+      const current = getState().count
+      actions.setCount(current - 1)
+    },
+    
+    resetCount: () => {
+      reset('count')
+    }
+  })
+)
+```
+
+### Custom Actions with Parameters
+
+```typescript
+import { create } from '@robosentient/stan'
+
+interface State {
+  count: number
+}
+
+interface CustomActions {
+  incrementBy: (amount: number) => void
+  multiplyBy: (factor: number) => void
+}
+
+const useStore = create(
+  { count: 0 },
+  ({ getState, actions }): CustomActions => ({
+    incrementBy: (amount) => {
+      actions.setCount(getState().count + amount)
+    },
+    
+    multiplyBy: (factor) => {
+      actions.setCount(getState().count * factor)
+    }
+  })
+)
+
+// Usage in component
+function Counter() {
+  const { count, incrementBy, multiplyBy } = useStore()
+  
+  return (
+    <View>
+      <Text>{count}</Text>
+      <Button onPress={() => incrementBy(5)} title="+5" />
+      <Button onPress={() => multiplyBy(2)} title="×2" />
+    </View>
+  )
+}
+```
+
+### Complex Business Logic
+
+```typescript
+import { create } from '@robosentient/stan'
+
+interface Todo {
+  id: string
+  text: string
+  completed: boolean
+}
+
+interface State {
+  todos: Todo[]
+  filter: 'all' | 'active' | 'completed'
+}
+
+interface CustomActions {
+  addTodo: (text: string) => void
+  toggleTodo: (id: string) => void
+  removeTodo: (id: string) => void
+  clearCompleted: () => void
+  toggleAll: () => void
+}
+
+const useStore = create(
+  {
+    todos: [] as Todo[],
+    filter: 'all' as const
+  },
+  ({ getState, actions }): CustomActions => ({
+    addTodo: (text) => {
+      const newTodo: Todo = {
+        id: Date.now().toString(),
+        text,
+        completed: false
+      }
+      actions.setTodos([...getState().todos, newTodo])
+    },
+    
+    toggleTodo: (id) => {
+      actions.setTodos(
+        getState().todos.map(todo =>
+          todo.id === id ? { ...todo, completed: !todo.completed } : todo
+        )
+      )
+    },
+    
+    removeTodo: (id) => {
+      actions.setTodos(
+        getState().todos.filter(todo => todo.id !== id)
+      )
+    },
+    
+    clearCompleted: () => {
+      actions.setTodos(
+        getState().todos.filter(todo => !todo.completed)
+      )
+    },
+    
+    toggleAll: () => {
+      const { todos } = getState()
+      const allCompleted = todos.every(todo => todo.completed)
+      actions.setTodos(
+        todos.map(todo => ({ ...todo, completed: !allCompleted }))
+      )
+    }
+  })
+)
+```
+
+### Async Custom Actions
+
+```typescript
+import { create } from '@robosentient/stan'
+
+interface User {
+  id: string
+  name: string
+  email: string
+}
+
+interface State {
+  user: User | null
+  loading: boolean
+  error: string | null
+}
+
+interface CustomActions {
+  fetchUser: (id: string) => Promise<void>
+  logout: () => void
+}
+
+const useStore = create(
+  {
+    user: null as User | null,
+    loading: false,
+    error: null as string | null
+  },
+  ({ actions, reset }): CustomActions => ({
+    fetchUser: async (id) => {
+      actions.setLoading(true)
+      actions.setError(null)
+      
+      try {
+        const response = await fetch(`/api/users/${id}`)
+        const user = await response.json()
+        actions.setUser(user)
+      } catch (error) {
+        actions.setError(error.message)
+      } finally {
+        actions.setLoading(false)
+      }
+    },
+    
+    logout: () => {
+      reset('user', 'error')
+    }
+  })
+)
+```
+
+### Computed Actions
+
+```typescript
+import { create } from '@robosentient/stan'
+
+interface State {
+  firstName: string
+  lastName: string
+  fullName: string
+}
+
+interface CustomActions {
+  setName: (first: string, last: string) => void
+  updateFullName: () => void
+}
+
+const useStore = create(
+  {
+    firstName: '',
+    lastName: '',
+    fullName: ''
+  },
+  ({ getState, actions }): CustomActions => ({
+    setName: (first, last) => {
+      actions.setFirstName(first)
+      actions.setLastName(last)
+      // Automatically update computed value
+      actions.setFullName(`${first} ${last}`.trim())
+    },
+    
+    updateFullName: () => {
+      const { firstName, lastName } = getState()
+      actions.setFullName(`${firstName} ${lastName}`.trim())
+    }
+  })
+)
+```
+
+## Type Inference
+
+TypeScript automatically infers types for custom actions:
+
+```typescript
+interface State {
+  count: number
+}
+
+// Return type is inferred from the builder
+const useStore = create(
+  { count: 0 },
+  ({ getState, actions }) => ({
+    // TypeScript infers: (amount: number) => void
+    incrementBy: (amount: number) => {
+      actions.setCount(getState().count + amount)
+    },
+    
+    // TypeScript infers: () => void
+    reset: () => {
+      actions.setCount(0)
+    }
+  })
+)
+
+// All actions are fully typed
+const { count, incrementBy, reset } = useStore()
+```
+
+## Utility Types
+
+### RemoveReadonly
+
+```typescript
+type RemoveReadonly<T> = Omit<T, GetReadonlyKeys<T>>
+```
+
+Utility type that removes readonly properties from a type. Used internally to ensure only writable properties have setter actions.
+
+### Actions
+
+```typescript
+type Actions<TState extends object> =
+    & { [K in keyof TState as ActionKey<K>]: (value: TState[K] | ((prevState: TState[K]) => TState[K])) => void }
+    & {}
+```
+
+Generated setter actions for each state property. Each action is named `set{PropertyName}` and accepts either a new value or an updater function.
+
+### ActionKey
+
+```typescript
+type ActionKey<K> = `set${Capitalize<K & string>}`
+```
+
+Utility type that generates setter action names by capitalizing property names and prefixing with `set`.
+
+## Best Practices
+
+1. **Type Safety**: Always define explicit interfaces for custom actions
+2. **Naming**: Use descriptive action names that reflect their purpose
+3. **Single Responsibility**: Each action should do one thing well
+4. **Async Handling**: Properly handle errors in async actions
+5. **State Updates**: Use the provided `actions` object instead of direct mutation
+6. **Reset Logic**: Use the `reset` function for resetting to initial values
+7. **Performance**: Batch related state updates in a single action
+
+## Related
+
+- [create()](/api/create-store) - Main function that accepts custom actions builder
+- [Actions Guide](/api/types/custom-actions) - Learn more about custom actions
+- [TypeScript Guide](/guides/typescript) - TypeScript best practices

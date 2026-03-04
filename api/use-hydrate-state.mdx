@@ -1,0 +1,395 @@
+---
+title: useHydrateState
+description: React hook to initialize store state once on component mount
+---
+
+## Overview
+
+The `useHydrateState` hook allows you to initialize or override store state values once when a component mounts. This is particularly useful for server-side rendering (SSR), Next.js, or when you need to populate store state from external sources like URL parameters, API responses, or props.
+
+## Signature
+
+```typescript
+function useHydrateState(state: Partial<TState>): void
+```
+
+## Parameters
+
+<ParamField path="state" type="Partial<RemoveReadonly<TState>>" required>
+  Partial state object containing the values to hydrate. Only the provided keys will be updated in the store.
+  
+  - Can include any writable properties from the store
+  - Readonly properties (computed getters) are ignored
+  - Values are applied via the store's setter actions
+  - Updates are batched for optimal performance
+</ParamField>
+
+## Return Value
+
+Void. The hook updates the store state as a side effect.
+
+## Behavior
+
+- **Runs Once**: Only executes on the first render (mount), never on re-renders
+- **Batched Updates**: All state updates are batched using `batchUpdates` to trigger only one notification
+- **Partial Updates**: Only updates the keys provided, leaving other state unchanged
+- **Action-Based**: Uses the store's setter actions to update state, ensuring consistency
+- **Idempotent**: Calling multiple times in the same component has no additional effect after the first call
+
+## Examples
+
+### Basic Hydration
+
+```typescript
+import { createStore } from '@stan-js/react'
+
+const userStore = createStore({
+  name: 'Guest',
+  email: ''
+})
+
+function UserProfile({ initialName, initialEmail }: Props) {
+  // Hydrate store once with props
+  userStore.useHydrateState({
+    name: initialName,
+    email: initialEmail
+  })
+  
+  const { name, email } = userStore.useStore()
+  
+  return (
+    <div>
+      <p>Name: {name}</p>
+      <p>Email: {email}</p>
+    </div>
+  )
+}
+```
+
+### SSR with Next.js
+
+```typescript
+import { createStore } from '@stan-js/react'
+
+const pageStore = createStore({
+  title: 'Default Title',
+  content: ''
+})
+
+export async function getServerSideProps() {
+  const data = await fetchPageData()
+  return {
+    props: {
+      pageData: data
+    }
+  }
+}
+
+function Page({ pageData }: { pageData: PageData }) {
+  // Hydrate from server-side props
+  pageStore.useHydrateState({
+    title: pageData.title,
+    content: pageData.content
+  })
+  
+  const { title, content } = pageStore.useStore()
+  
+  return (
+    <div>
+      <h1>{title}</h1>
+      <div>{content}</div>
+    </div>
+  )
+}
+```
+
+### Hydration from URL Parameters
+
+```typescript
+import { createStore } from '@stan-js/react'
+import { useSearchParams } from 'next/navigation'
+
+const filterStore = createStore({
+  category: 'all',
+  sortBy: 'recent',
+  page: 1
+})
+
+function ProductList() {
+  const searchParams = useSearchParams()
+  
+  // Hydrate from URL parameters
+  filterStore.useHydrateState({
+    category: searchParams.get('category') || 'all',
+    sortBy: searchParams.get('sort') || 'recent',
+    page: Number(searchParams.get('page')) || 1
+  })
+  
+  const { category, sortBy, page } = filterStore.useStore()
+  
+  return <div>Filters: {category}, {sortBy}, Page {page}</div>
+}
+```
+
+### Hydration from API Response
+
+```typescript
+import { createStore } from '@stan-js/react'
+import { useEffect, useState } from 'react'
+
+const settingsStore = createStore({
+  theme: 'light',
+  language: 'en',
+  notifications: true
+})
+
+function Settings() {
+  const [serverSettings, setServerSettings] = useState(null)
+  
+  useEffect(() => {
+    fetchUserSettings().then(setServerSettings)
+  }, [])
+  
+  // Hydrate when API data is available
+  if (serverSettings) {
+    settingsStore.useHydrateState(serverSettings)
+  }
+  
+  const { theme, language, notifications } = settingsStore.useStore()
+  
+  return <div>Settings loaded</div>
+}
+```
+
+### Partial Hydration
+
+```typescript
+const formStore = createStore({
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: ''
+})
+
+function EditProfile({ user }: { user: User }) {
+  // Only hydrate firstName and email, leave others unchanged
+  formStore.useHydrateState({
+    firstName: user.firstName,
+    email: user.email
+  })
+  
+  const store = formStore.useStore()
+  
+  return (
+    <form>
+      <input value={store.firstName} onChange={e => store.setFirstName(e.target.value)} />
+      <input value={store.lastName} onChange={e => store.setLastName(e.target.value)} />
+      <input value={store.email} onChange={e => store.setEmail(e.target.value)} />
+      <input value={store.phone} onChange={e => store.setPhone(e.target.value)} />
+    </form>
+  )
+}
+```
+
+### Multiple Components Hydrating
+
+```typescript
+const appStore = createStore({
+  userId: null as string | null,
+  theme: 'light',
+  locale: 'en'
+})
+
+function App() {
+  // First component to mount hydrates userId
+  appStore.useHydrateState({ userId: 'user123' })
+  
+  return (
+    <>
+      <ThemeProvider />
+      <LocaleProvider />
+    </>
+  )
+}
+
+function ThemeProvider() {
+  // This hydration happens once in this component
+  appStore.useHydrateState({ theme: 'dark' })
+  return null
+}
+
+function LocaleProvider() {
+  // This hydration happens once in this component
+  appStore.useHydrateState({ locale: 'es' })
+  return null
+}
+
+// Result: All three values are hydrated once each
+```
+
+### With Computed Properties
+
+```typescript
+const cartStore = createStore({
+  items: [] as CartItem[],
+  discountCode: '',
+  get total() {
+    return this.items.reduce((sum, item) => sum + item.price, 0)
+  },
+  get discountedTotal() {
+    const base = this.total
+    return this.discountCode ? base * 0.9 : base
+  }
+})
+
+function Cart({ savedCart }: { savedCart: SavedCart }) {
+  // Hydrate writable properties only
+  cartStore.useHydrateState({
+    items: savedCart.items,
+    discountCode: savedCart.discountCode
+    // Note: 'total' and 'discountedTotal' are computed and can't be hydrated
+  })
+  
+  const { items, discountedTotal } = cartStore.useStore()
+  
+  return <div>Total: ${discountedTotal}</div>
+}
+```
+
+### Hydration with Storage
+
+```typescript
+import { createStore } from '@stan-js/react'
+import { storage } from '@stan-js/react'
+
+const preferenceStore = createStore({
+  theme: storage('light'),
+  fontSize: storage(16)
+})
+
+function Preferences({ serverPreferences }: { serverPreferences: Prefs }) {
+  // Override storage values with server preferences
+  preferenceStore.useHydrateState({
+    theme: serverPreferences.theme,
+    fontSize: serverPreferences.fontSize
+  })
+  
+  const { theme, fontSize } = preferenceStore.useStore()
+  
+  return <div>Theme: {theme}, Font Size: {fontSize}</div>
+}
+```
+
+### Conditional Hydration
+
+```typescript
+const draftStore = createStore({
+  title: '',
+  content: '',
+  status: 'draft'
+})
+
+function PostEditor({ draftId }: { draftId?: string }) {
+  const [draft, setDraft] = useState(null)
+  
+  useEffect(() => {
+    if (draftId) {
+      loadDraft(draftId).then(setDraft)
+    }
+  }, [draftId])
+  
+  // Only hydrate if we have a draft
+  if (draft) {
+    draftStore.useHydrateState(draft)
+  }
+  
+  const store = draftStore.useStore()
+  
+  return (
+    <div>
+      <input 
+        value={store.title} 
+        onChange={e => store.setTitle(e.target.value)} 
+      />
+      <textarea 
+        value={store.content} 
+        onChange={e => store.setContent(e.target.value)} 
+      />
+    </div>
+  )
+}
+```
+
+## Use Cases
+
+- **SSR/SSG**: Hydrating client store with server-rendered data
+- **Route Parameters**: Initializing filters/state from URL
+- **API Responses**: Populating store from fetched data
+- **Props to Store**: Converting component props to global state
+- **Draft Recovery**: Restoring unsaved work from localStorage
+- **User Preferences**: Loading saved settings on mount
+- **Deep Linking**: Setting up app state from URL
+
+## Comparison with Direct Actions
+
+```typescript
+// Without useHydrateState
+function Component({ data }: Props) {
+  useEffect(() => {
+    store.actions.setName(data.name)
+    store.actions.setEmail(data.email)
+  }, []) // Empty deps means it runs on every mount
+}
+
+// With useHydrateState
+function Component({ data }: Props) {
+  store.useHydrateState({
+    name: data.name,
+    email: data.email
+  }) // Only runs once, automatically batched
+}
+```
+
+Benefits of `useHydrateState`:
+- Runs once, guaranteed (not dependent on useEffect timing)
+- Automatically batches all updates
+- More concise and declarative
+- No dependency array to manage
+
+## Type Safety
+
+The hook only accepts writable properties:
+
+```typescript
+const store = createStore({
+  count: 0,
+  name: 'John',
+  get double() {
+    return this.count * 2
+  }
+})
+
+function Component() {
+  store.useHydrateState({
+    count: 10,    // ✓ OK
+    name: 'Jane', // ✓ OK
+    // double: 20 // ✗ TypeScript error: 'double' is readonly
+  })
+}
+```
+
+## Performance
+
+- Updates are batched using `batchUpdates`, so subscribers are notified only once
+- Uses a ref to ensure the hydration logic runs only once, even with React Strict Mode
+- Minimal overhead: no subscriptions or effects created
+
+## Notes
+
+- Only runs once per component instance (uses `useRef` internally)
+- Works correctly with React Strict Mode (which mounts components twice in development)
+- Does not re-run if the `state` parameter changes on re-renders
+- Computed properties (getters) cannot be hydrated
+- Updates are synchronous and immediate
+- Can be called in multiple components; each component's hydration runs independently
+- Calling with an empty object `{}` is valid but has no effect

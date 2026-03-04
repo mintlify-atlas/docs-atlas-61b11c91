@@ -1,0 +1,274 @@
+---
+title: Data Persistence
+description: Persist state across sessions using Stan.js storage synchronizers
+---
+
+Stan.js provides built-in persistence through the **Synchronizer** pattern, allowing state to seamlessly sync with localStorage, MMKV, or custom storage solutions.
+
+## Basic Storage
+
+Wrap any state value with the `storage()` function to persist it:
+
+```typescript
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  user: storage(''),
+  theme: storage<'light' | 'dark'>('light'),
+  preferences: storage({ notifications: true, language: 'en' })
+})
+```
+
+<Note>
+The `storage()` function automatically handles serialization, deserialization, and synchronization with localStorage.
+</Note>
+
+## How It Works
+
+When you wrap a value with `storage()`, Stan.js creates a **Synchronizer** that:
+
+1. **Reads** from localStorage on initialization
+2. **Writes** to localStorage on every update
+3. **Listens** for changes from other tabs/windows
+4. **Falls back** to in-memory storage during SSR
+
+```typescript
+const { user, setUser } = useStore()
+
+// Reading: automatically loads from localStorage
+console.log(user) // Value from localStorage or initial value
+
+// Writing: automatically saves to localStorage
+setUser('john.doe')
+
+// Cross-tab sync: updates from other tabs automatically sync
+```
+
+## Custom Storage Keys
+
+By default, storage uses the property name as the key. Customize it:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  user: storage('', { storageKey: 'app.user.v2' }),
+  theme: storage('light', { storageKey: 'app.theme' })
+})
+```
+
+## Serialization
+
+Custom serialize/deserialize functions for complex data:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+interface User {
+  id: string
+  name: string
+  createdAt: Date
+}
+
+export const { useStore } = createStore({
+  user: storage<User | null>(null, {
+    serialize: (user) => JSON.stringify({
+      ...user,
+      createdAt: user?.createdAt.toISOString()
+    }),
+    deserialize: (str) => {
+      const parsed = JSON.parse(str)
+      return {
+        ...parsed,
+        createdAt: new Date(parsed.createdAt)
+      }
+    }
+  })
+})
+```
+
+<Tip>
+Custom serialization is useful for Dates, Maps, Sets, or any non-JSON-serializable data.
+</Tip>
+
+## SSR Compatibility
+
+Storage automatically handles server-side rendering:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+export const { useStore } = createStore({
+  // Safe to use during SSR
+  user: storage('guest')
+})
+```
+
+During SSR (when `window` is undefined):
+- Uses in-memory Map for storage
+- Returns initial value if no stored value exists
+- Hydrates from localStorage on client-side mount
+
+<Warning>
+Be careful with SSR hydration mismatches. If the server renders with the initial value but the client has a different stored value, React will show a hydration warning.
+</Warning>
+
+### SSR Hydration Pattern
+
+For Next.js or other SSR frameworks, hydrate state after mount:
+
+```typescript
+'use client'
+
+import { useStore } from './store'
+import { useEffect, useState } from 'react'
+
+const UserProfile = () => {
+  const [mounted, setMounted] = useState(false)
+  const { user } = useStore()
+
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) {
+    return <div>Loading...</div>
+  }
+
+  return <div>Welcome, {user}!</div>
+}
+```
+
+See the [SSR guide](/guides/ssr) for advanced patterns.
+
+## Global Storage Configuration
+
+Create a custom storage instance with global configuration:
+
+```typescript
+import { createStorage } from 'stan-js/storage'
+
+// Custom storage with global serialization
+export const customStorage = createStorage({
+  serialize: (value) => JSON.stringify(value, null, 2),
+  deserialize: (str) => JSON.parse(str)
+})
+
+// Use in store
+export const { useStore } = createStore({
+  data: customStorage({ items: [] })
+})
+```
+
+## React Native with MMKV
+
+For React Native, use MMKV for faster, more secure storage:
+
+```typescript
+import { MMKV } from 'react-native-mmkv'
+import { createStorage } from 'stan-js/storage'
+
+const mmkvInstance = new MMKV()
+
+export const storage = createStorage({ mmkvInstance })
+
+export const { useStore } = createStore({
+  user: storage(''),
+  token: storage('')
+})
+```
+
+<Note>
+MMKV is significantly faster than AsyncStorage and supports synchronous reads, making it perfect for Stan.js.
+</Note>
+
+## Storage Implementation Details
+
+The storage synchronizer implements this interface:
+
+```typescript
+type Synchronizer<T> = {
+  value: T                                          // Initial value
+  subscribe?: (update: (value: T) => void) => void // Listen for changes
+  getSnapshot: () => T | Promise<T>                // Read from storage
+  update: (value: T) => void                       // Write to storage
+}
+```
+
+Key behaviors from `src/storage/factory.ts:48`:
+
+- **getSnapshot**: Reads from localStorage, throws if not found
+- **update**: Writes to localStorage, removes key if value is `undefined`
+- **subscribe**: Listens to `storage` events for cross-tab sync
+
+## Clearing Persisted Data
+
+Set a value to `undefined` to remove it from storage:
+
+```typescript
+const { setUser } = useStore()
+
+// Removes 'user' from localStorage
+setUser(undefined)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Selective Persistence" icon="filter">
+    Only persist data that needs to survive page refreshes. Not all state needs persistence.
+  </Card>
+  <Card title="Storage Keys" icon="key">
+    Use versioned storage keys (e.g., `app.user.v2`) to handle schema changes gracefully.
+  </Card>
+  <Card title="Sensitive Data" icon="shield">
+    Never store sensitive data in localStorage. Use secure, httpOnly cookies or server-side sessions.
+  </Card>
+  <Card title="Performance" icon="gauge">
+    LocalStorage is synchronous and can block the main thread. Keep stored values reasonably small.
+  </Card>
+</CardGroup>
+
+## Migration Patterns
+
+Handle storage schema changes:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+interface UserV2 {
+  id: string
+  name: string
+  email: string
+}
+
+const migrateUser = (str: string): UserV2 => {
+  const parsed = JSON.parse(str)
+  
+  // Old schema: just a string
+  if (typeof parsed === 'string') {
+    return { id: '1', name: parsed, email: '' }
+  }
+  
+  // New schema
+  return parsed
+}
+
+export const { useStore } = createStore({
+  user: storage<UserV2 | null>(null, {
+    storageKey: 'app.user.v2',
+    deserialize: migrateUser
+  })
+})
+```
+
+## Debugging Storage
+
+Inspect stored values in browser DevTools:
+
+```javascript
+// Console
+localStorage.getItem('user')
+
+// Or use the Application tab in Chrome DevTools
+// Application > Local Storage > your-domain
+```

@@ -1,0 +1,518 @@
+---
+title: Async Data & Loading States
+description: Handle asynchronous data fetching with loading and error states
+---
+
+This example demonstrates how to manage asynchronous operations, loading states, and error handling in Stan.js. Based on the real examples from the Stan.js repository.
+
+## Live Demo
+
+<Card title="Try it on StackBlitz" icon="bolt" href="https://stackblitz.com/github/codemask-labs/stan-js/tree/main/examples/react">
+  See the async data example in action
+</Card>
+
+## Store Setup
+
+Create a store that tracks users, loading states, and errors:
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+
+type User = {
+    id: string
+    name: string
+    email: string
+}
+
+export const { useStore, getState, actions } = createStore({
+    users: [] as User[],
+    isLoading: false,
+    error: null as string | null,
+    // Computed value for user count
+    get userCount() {
+        return this.users.length
+    },
+})
+```
+
+## Async Data Fetching
+
+Create async functions that update the store:
+
+```typescript api.ts
+import { actions } from './store'
+
+export const fetchUsers = async () => {
+    // Set loading state
+    actions.setIsLoading(true)
+    actions.setError(null)
+
+    try {
+        const response = await fetch('https://api.example.com/users')
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch users')
+        }
+
+        const users = await response.json()
+        
+        // Update users
+        actions.setUsers(users)
+    } catch (error) {
+        // Handle errors
+        actions.setError(error instanceof Error ? error.message : 'Unknown error')
+    } finally {
+        // Always clear loading state
+        actions.setIsLoading(false)
+    }
+}
+
+export const fetchMoreUsers = async () => {
+    actions.setIsLoading(true)
+    actions.setError(null)
+
+    try {
+        const response = await fetch('https://randommer.io/Name', {
+            headers: {
+                'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            },
+            body: 'type=firstname&number=20',
+            method: 'POST',
+        })
+
+        const newUsers = await response.json() as string[]
+        
+        // Append to existing users
+        actions.setUsers(prev => [
+            ...prev,
+            ...newUsers.map((name, index) => ({
+                id: `${Date.now()}-${index}`,
+                name,
+                email: `${name.toLowerCase()}@example.com`,
+            })),
+        ])
+    } catch (error) {
+        actions.setError('Failed to load more users')
+    } finally {
+        actions.setIsLoading(false)
+    }
+}
+```
+
+<Note>
+You can call `actions` from anywhere - inside components, event handlers, or standalone functions. No need to wrap in hooks!
+</Note>
+
+## Component Implementation
+
+<Tabs>
+  <Tab title="Complete Example">
+    ```tsx UsersList.tsx
+import { useEffect } from 'react'
+import { useStore } from './store'
+import { fetchUsers, fetchMoreUsers } from './api'
+
+export const UsersList = () => {
+    const { users, isLoading, error, userCount } = useStore()
+
+    // Fetch on mount
+    useEffect(() => {
+        fetchUsers()
+    }, [])
+
+    if (error) {
+        return (
+            <div>
+                <p>Error: {error}</p>
+                <button onClick={fetchUsers}>Retry</button>
+            </div>
+        )
+    }
+
+    return (
+        <div>
+            <h2>Users ({userCount})</h2>
+            
+            {isLoading && users.length === 0 ? (
+                <p>Loading users...</p>
+            ) : (
+                <ul>
+                    {users.map(user => (
+                        <li key={user.id}>
+                            {user.name} - {user.email}
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            <button
+                onClick={fetchMoreUsers}
+                disabled={isLoading}
+            >
+                {isLoading ? 'Loading...' : 'Load More'}
+            </button>
+        </div>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Loading States">
+    ```tsx LoadingExample.tsx
+import { useStore } from './store'
+import { fetchMoreUsers } from './api'
+
+export const FetchMore = () => {
+    const { isLoading } = useStore()
+
+    return (
+        <button
+            onClick={fetchMoreUsers}
+            disabled={isLoading}
+        >
+            {isLoading ? 'Loading...' : 'Fetch more users'}
+        </button>
+    )
+}
+
+export const UsersList = () => {
+    const { users, isLoading } = useStore()
+
+    // Show spinner only on initial load
+    if (isLoading && users.length === 0) {
+        return <div>Loading users...</div>
+    }
+
+    // Show list with loading indicator for pagination
+    return (
+        <div>
+            <ul>
+                {users.map(user => (
+                    <li key={user.id}>{user.name}</li>
+                ))}
+            </ul>
+            {isLoading && <div>Loading more...</div>}
+        </div>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Error Handling">
+    ```tsx ErrorHandling.tsx
+import { useStore } from './store'
+import { fetchUsers } from './api'
+
+export const UsersWithError = () => {
+    const { users, error, isLoading } = useStore()
+
+    // Error state
+    if (error) {
+        return (
+            <div className="error">
+                <p>Failed to load users: {error}</p>
+                <button onClick={fetchUsers}>Try Again</button>
+            </div>
+        )
+    }
+
+    // Loading state
+    if (isLoading && users.length === 0) {
+        return <div>Loading...</div>
+    }
+
+    // Success state
+    return (
+        <ul>
+            {users.map(user => (
+                <li key={user.id}>{user.name}</li>
+            ))}
+        </ul>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Auto-Scrolling List">
+    ```tsx AutoScrollList.tsx
+import { useEffect, useRef } from 'react'
+import { useStore } from './store'
+import { fetchMoreUsers } from './api'
+
+export const UsersList = () => {
+    const { users } = useStore()
+    const listRef = useRef<HTMLDivElement>(null)
+
+    // Auto-scroll to bottom when new users are added
+    useEffect(() => {
+        listRef.current?.scrollTo({
+            top: listRef.current.scrollHeight,
+            behavior: 'smooth',
+        })
+    }, [users])
+
+    return (
+        <div>
+            <div
+                ref={listRef}
+                className="user-list-container"
+                style={{ height: '320px', overflow: 'auto' }}
+            >
+                {users.length === 0 && (
+                    <span>Press the button to fetch users.</span>
+                )}
+                {users.map(user => (
+                    <div key={user.id}>{user.name}</div>
+                ))}
+            </div>
+            <button onClick={fetchMoreUsers}>
+                Fetch more users
+            </button>
+        </div>
+    )
+}
+    ```
+
+    <Info>
+    This pattern is from the real Stan.js React example. The list automatically scrolls when new users are added.
+    </Info>
+  </Tab>
+</Tabs>
+
+## Patterns & Best Practices
+
+### Loading State Patterns
+
+<CodeGroup>
+```typescript Initial Load
+// Show spinner on first load
+if (isLoading && users.length === 0) {
+    return <Spinner />
+}
+```
+
+```typescript Pagination
+// Keep showing data while loading more
+return (
+    <div>
+        <UserList users={users} />
+        {isLoading && <LoadingMore />}
+    </div>
+)
+```
+
+```typescript Button State
+// Disable button while loading
+<button
+    onClick={fetchData}
+    disabled={isLoading}
+>
+    {isLoading ? 'Loading...' : 'Load Data'}
+</button>
+```
+
+```typescript Optimistic Updates
+// Update UI immediately, revert on error
+const deleteUser = async (id: string) => {
+    const previousUsers = getState().users
+    
+    // Optimistic update
+    actions.setUsers(prev => prev.filter(u => u.id !== id))
+    
+    try {
+        await api.deleteUser(id)
+    } catch (error) {
+        // Revert on error
+        actions.setUsers(previousUsers)
+        actions.setError('Failed to delete user')
+    }
+}
+```
+</CodeGroup>
+
+### Error Handling Strategies
+
+<AccordionGroup>
+  <Accordion title="Inline Error Display">
+    ```tsx
+    const { error } = useStore()
+    
+    return (
+        <div>
+            {error && (
+                <div className="error-banner">
+                    {error}
+                    <button onClick={() => actions.setError(null)}>×</button>
+                </div>
+            )}
+            <UsersList />
+        </div>
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Error Boundary Pattern">
+    ```tsx
+    const { users, error, isLoading } = useStore()
+    
+    if (error) {
+        return <ErrorState error={error} onRetry={fetchUsers} />
+    }
+    
+    if (isLoading) {
+        return <LoadingState />
+    }
+    
+    return <SuccessState users={users} />
+    ```
+  </Accordion>
+  
+  <Accordion title="Toast Notifications">
+    ```tsx
+    import { toast } from 'sonner'
+    import { actions } from './store'
+    
+    export const fetchUsers = async () => {
+        try {
+            const users = await api.getUsers()
+            actions.setUsers(users)
+            toast.success('Users loaded successfully')
+        } catch (error) {
+            toast.error('Failed to load users')
+            actions.setError(error.message)
+        }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Retry Logic">
+    ```tsx
+    const fetchWithRetry = async (retries = 3) => {
+        for (let i = 0; i < retries; i++) {
+            try {
+                return await fetchUsers()
+            } catch (error) {
+                if (i === retries - 1) throw error
+                await new Promise(r => setTimeout(r, 1000 * (i + 1)))
+            }
+        }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Updates Outside React
+
+Stan.js works seamlessly with updates outside React components:
+
+```typescript timer.ts
+import { actions } from './store'
+
+// Update state from setInterval
+setInterval(() => {
+    actions.setCurrentTime(new Date())
+}, 1000)
+```
+
+```tsx CurrentTime.tsx
+import { useStore } from './store'
+
+const CurrentTime = () => {
+    const { currentTime } = useStore()
+
+    return <h2>{currentTime.toLocaleTimeString()}</h2>
+}
+```
+
+<Info>
+This example is from the Stan.js React demo. The timer updates every second from outside React, and components reactively update!
+</Info>
+
+## Advanced Patterns
+
+### Debounced Search
+
+```typescript
+import { debounce } from 'lodash'
+import { actions } from './store'
+
+const searchUsers = debounce(async (query: string) => {
+    actions.setIsLoading(true)
+    try {
+        const users = await api.searchUsers(query)
+        actions.setUsers(users)
+    } catch (error) {
+        actions.setError('Search failed')
+    } finally {
+        actions.setIsLoading(false)
+    }
+}, 300)
+
+export const SearchInput = () => (
+    <input
+        onChange={e => searchUsers(e.target.value)}
+        placeholder="Search users..."
+    />
+)
+```
+
+### Polling
+
+```typescript
+import { useEffect } from 'react'
+import { fetchUsers } from './api'
+
+export const usePolling = (interval: number) => {
+    useEffect(() => {
+        const id = setInterval(fetchUsers, interval)
+        return () => clearInterval(id)
+    }, [interval])
+}
+
+// Usage
+export const App = () => {
+    usePolling(5000) // Poll every 5 seconds
+    return <UsersList />
+}
+```
+
+### Request Cancellation
+
+```typescript
+let controller: AbortController | null = null
+
+export const fetchUsers = async () => {
+    // Cancel previous request
+    controller?.abort()
+    controller = new AbortController()
+
+    actions.setIsLoading(true)
+    try {
+        const response = await fetch('/api/users', {
+            signal: controller.signal,
+        })
+        const users = await response.json()
+        actions.setUsers(users)
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            actions.setError('Failed to fetch')
+        }
+    } finally {
+        actions.setIsLoading(false)
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Native" icon="mobile" href="/examples/react-native">
+    Learn about mobile development with Stan.js
+  </Card>
+  <Card title="Basic Counter" icon="gauge" href="/examples/basic-counter">
+    Start with the fundamentals
+  </Card>
+  <Card title="Effects" icon="bolt" href="/api/use-store-effect">
+    React to state changes with effects
+  </Card>
+  <Card title="Actions API" icon="code" href="/api/types/custom-actions">
+    Explore the actions API
+  </Card>
+</CardGroup>

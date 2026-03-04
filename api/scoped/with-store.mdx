@@ -1,0 +1,381 @@
+---
+title: withStore
+description: Higher-Order Component that wraps a component with a StoreProvider
+---
+
+## Overview
+
+`withStore` is a Higher-Order Component (HOC) returned by `createScopedStore` that wraps a component with a `StoreProvider`. This provides a convenient way to ensure a component always has its own isolated store instance without manually wrapping it.
+
+## Signature
+
+```typescript
+function withStore<TProps extends object>(
+  Component: FunctionComponent<TProps>,
+  initialValue?: Partial<TState>
+): (props: TProps) => JSX.Element
+```
+
+## Parameters
+
+<ParamField path="Component" type="FunctionComponent<TProps>" required>
+  The React component to wrap with a StoreProvider.
+</ParamField>
+
+<ParamField path="initialValue" type="Partial<TState>">
+  Optional initial values to pass to the StoreProvider. These will be merged with the base initial state.
+</ParamField>
+
+## Returns
+
+A new component that renders the original component wrapped in a `StoreProvider`.
+
+## Usage
+
+### Basic HOC
+
+```tsx
+import { createScopedStore } from '@stan-js/react'
+
+const { withStore, useStore } = createScopedStore({
+  count: 0,
+  label: 'Counter'
+})
+
+function CounterComponent() {
+  const { count, label, actions } = useStore()
+  
+  return (
+    <div>
+      <h3>{label}</h3>
+      <button onClick={() => actions.setCount(count + 1)}>
+        {count}
+      </button>
+    </div>
+  )
+}
+
+// Wrap with store provider
+const Counter = withStore(CounterComponent)
+
+function App() {
+  return (
+    <div>
+      <Counter /> {/* Has its own store instance */}
+      <Counter /> {/* Has a different store instance */}
+    </div>
+  )
+}
+```
+
+### With Initial Value
+
+```tsx
+const { withStore, useStore } = createScopedStore({
+  title: '',
+  content: '',
+  isPublished: false
+})
+
+function PostEditor() {
+  const { title, content, isPublished, actions } = useStore()
+  
+  return (
+    <div>
+      <input
+        value={title}
+        onChange={(e) => actions.setTitle(e.target.value)}
+      />
+      <textarea
+        value={content}
+        onChange={(e) => actions.setContent(e.target.value)}
+      />
+      <label>
+        <input
+          type="checkbox"
+          checked={isPublished}
+          onChange={(e) => actions.setIsPublished(e.target.checked)}
+        />
+        Published
+      </label>
+    </div>
+  )
+}
+
+// Create variants with different initial values
+const NewPost = withStore(PostEditor)
+const DraftPost = withStore(PostEditor, { 
+  title: 'Draft',
+  isPublished: false 
+})
+const PublishedPost = withStore(PostEditor, { 
+  isPublished: true 
+})
+```
+
+### Modal Pattern
+
+```tsx
+const { withStore, useStore } = createScopedStore({
+  isOpen: false,
+  title: '',
+  content: null as React.ReactNode
+})
+
+function ModalContent() {
+  const { isOpen, title, content, actions } = useStore()
+  
+  if (!isOpen) return null
+  
+  return (
+    <div className="modal">
+      <div className="modal-header">
+        <h2>{title}</h2>
+        <button onClick={() => actions.setIsOpen(false)}>×</button>
+      </div>
+      <div className="modal-body">{content}</div>
+    </div>
+  )
+}
+
+// Each modal instance has its own open/closed state
+const Modal = withStore(ModalContent, { isOpen: false })
+
+function App() {
+  return (
+    <div>
+      <Modal />
+      <Modal />
+    </div>
+  )
+}
+```
+
+### Form Components
+
+```tsx
+const { withStore, useStore } = createScopedStore({
+  email: '',
+  password: '',
+  rememberMe: false,
+  errors: {} as Record<string, string>
+})
+
+function LoginFormComponent() {
+  const { email, password, rememberMe, errors, actions } = useStore()
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // Validation logic
+    if (!email) {
+      actions.setErrors({ email: 'Email is required' })
+      return
+    }
+    // Submit logic
+  }
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => actions.setEmail(e.target.value)}
+      />
+      {errors.email && <span>{errors.email}</span>}
+      
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => actions.setPassword(e.target.value)}
+      />
+      
+      <label>
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(e) => actions.setRememberMe(e.target.checked)}
+        />
+        Remember me
+      </label>
+      
+      <button type="submit">Login</button>
+    </form>
+  )
+}
+
+const LoginForm = withStore(LoginFormComponent)
+```
+
+## Implementation Details
+
+The HOC is implemented as a simple wrapper:
+
+```typescript
+const withStore = <TProps extends object>(
+  Component: FunctionComponent<TProps>,
+  initialValue?: Partial<TState>
+) => (props: TProps) => (
+  <StoreProvider initialValue={initialValue}>
+    <Component {...props} />
+  </StoreProvider>
+)
+```
+
+This means:
+- All props are forwarded to the wrapped component
+- Each render creates a new StoreProvider instance
+- The `initialValue` is fixed at HOC creation time
+
+## Comparison with StoreProvider
+
+### Using StoreProvider
+
+```tsx
+function App() {
+  return (
+    <StoreProvider initialValue={{ count: 5 }}>
+      <Counter />
+    </StoreProvider>
+  )
+}
+```
+
+### Using withStore
+
+```tsx
+const Counter = withStore(CounterComponent, { count: 5 })
+
+function App() {
+  return <Counter />
+}
+```
+
+### When to Use Which
+
+**Use `StoreProvider` when:**
+- You need dynamic initial values based on props or state
+- You want to control when the provider is rendered
+- You have multiple children to wrap
+
+**Use `withStore` when:**
+- You want a reusable component with guaranteed isolation
+- Initial values are static
+- You prefer HOC composition style
+- Creating component variants with different defaults
+
+## Common Patterns
+
+### Component Library
+
+```tsx
+const { withStore, useStore } = createScopedStore({
+  isExpanded: false,
+  title: '',
+  children: null as ReactNode
+})
+
+function AccordionComponent() {
+  const { isExpanded, title, children, actions } = useStore()
+  
+  return (
+    <div>
+      <button onClick={() => actions.setIsExpanded(!isExpanded)}>
+        {title}
+      </button>
+      {isExpanded && <div>{children}</div>}
+    </div>
+  )
+}
+
+// Export wrapped version
+export const Accordion = withStore(AccordionComponent)
+```
+
+### Factory Pattern
+
+```tsx
+function createFormComponent(initialState: FormState) {
+  const { withStore, useStore } = createScopedStore(initialState)
+  
+  function FormComponent() {
+    const state = useStore()
+    return <form>{/* form fields */}</form>
+  }
+  
+  return withStore(FormComponent)
+}
+
+const UserForm = createFormComponent({ name: '', email: '' })
+const ProductForm = createFormComponent({ title: '', price: 0 })
+```
+
+### Decorator-Style Composition
+
+```tsx
+const { withStore: withFormStore } = createScopedStore(formState)
+const { withStore: withValidation } = createScopedStore(validationState)
+
+const EnhancedForm = withValidation(
+  withFormStore(FormComponent)
+)
+```
+
+### Testing
+
+```tsx
+import { render } from '@testing-library/react'
+
+const { withStore, useStore } = createScopedStore({ count: 0 })
+
+function Counter() {
+  const { count, actions } = useStore()
+  return <button onClick={() => actions.setCount(count + 1)}>{count}</button>
+}
+
+const WrappedCounter = withStore(Counter, { count: 5 })
+
+test('counter starts at initial value', () => {
+  const { getByText } = render(<WrappedCounter />)
+  expect(getByText('5')).toBeInTheDocument()
+})
+```
+
+## Type Safety
+
+The HOC preserves the component's prop types:
+
+```tsx
+interface CounterProps {
+  label: string
+  max?: number
+}
+
+function Counter({ label, max = 10 }: CounterProps) {
+  const { count, actions } = useStore()
+  
+  return (
+    <div>
+      <h3>{label}</h3>
+      <button
+        onClick={() => actions.setCount(Math.min(count + 1, max))}
+        disabled={count >= max}
+      >
+        {count}
+      </button>
+    </div>
+  )
+}
+
+const WrappedCounter = withStore(Counter)
+
+// TypeScript enforces required props
+<WrappedCounter label="My Counter" /> // ✓ OK
+<WrappedCounter /> // ✗ Error: label is required
+<WrappedCounter label="Test" max={5} /> // ✓ OK
+```
+
+## See Also
+
+- [createScopedStore](/api/scoped/create-scoped-store) - Create scoped stores
+- [StoreProvider](/api/scoped/store-provider) - Provider component
+- [createStore](/api/create-store) - Base store creation

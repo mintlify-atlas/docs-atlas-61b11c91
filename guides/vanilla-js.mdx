@@ -1,0 +1,365 @@
+---
+title: Vanilla JavaScript
+description: Use Stan.js without React for framework-agnostic state management
+---
+
+Stan.js can be used without React through the `stan-js/vanilla` package. This is perfect for vanilla JavaScript, non-React frameworks, or backend logic.
+
+## Installation
+
+Import from the vanilla subpackage:
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+```
+
+## Basic Usage
+
+Create a store and interact with it imperatively:
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+
+const store = createStore({
+  counter: 0,
+  message: 'Hello',
+  users: [] as Array<string>
+})
+
+// Read state
+console.log(store.getState().counter) // 0
+
+// Update state
+store.actions.setCounter(5)
+store.actions.setMessage('World')
+
+// Functional updates
+store.actions.setCounter(prev => prev + 1)
+
+console.log(store.getState().counter) // 6
+```
+
+## Core API
+
+### getState()
+
+Retrieve the current state:
+
+```typescript
+const state = store.getState()
+console.log(state.counter, state.message)
+```
+
+### actions
+
+Auto-generated setter functions for each state property:
+
+```typescript
+// Direct value
+store.actions.setCounter(10)
+
+// Functional update
+store.actions.setCounter(prev => prev * 2)
+
+// Arrays and objects
+store.actions.setUsers(prev => [...prev, 'Alice'])
+```
+
+### subscribe()
+
+Listen to state changes:
+
+```typescript
+const unsubscribe = store.subscribe(['counter'])(newState => {
+  console.log('Counter changed:', store.getState().counter)
+})
+
+// Stop listening
+unsubscribe()
+```
+
+<Note>
+The subscribe function takes an array of keys to watch. Only changes to those keys will trigger the callback.
+</Note>
+
+### effect()
+
+A more convenient way to subscribe that auto-tracks dependencies:
+
+```typescript
+const dispose = store.effect(state => {
+  console.log('Counter or message changed:', state.counter, state.message)
+})
+
+// Only runs when counter or message changes
+store.actions.setCounter(5) // Triggers
+store.actions.setUsers(['Bob']) // Doesn't trigger
+
+// Stop listening
+dispose()
+```
+
+The effect automatically tracks which properties you access:
+
+```typescript
+store.effect(({ counter }) => {
+  console.log('Counter:', counter)
+  // Only subscribes to 'counter', not other properties
+})
+```
+
+### reset()
+
+Reset state to initial values:
+
+```typescript
+// Reset specific keys
+store.reset('counter', 'message')
+
+// Reset everything
+store.reset()
+```
+
+### batchUpdates()
+
+Batch multiple updates to trigger listeners only once:
+
+```typescript
+store.batchUpdates(() => {
+  store.actions.setCounter(0)
+  store.actions.setMessage('Reset')
+  store.actions.setUsers([])
+})
+// Listeners fire only once after all updates
+```
+
+## Computed Values
+
+Use getters for derived state:
+
+```typescript
+const store = createStore({
+  firstName: 'John',
+  lastName: 'Doe',
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`
+  }
+})
+
+console.log(store.getState().fullName) // 'John Doe'
+
+store.actions.setFirstName('Jane')
+console.log(store.getState().fullName) // 'Jane Doe'
+```
+
+Computed values automatically update when dependencies change:
+
+```typescript
+store.effect(({ fullName }) => {
+  console.log('Full name:', fullName)
+})
+
+store.actions.setFirstName('Bob') // Triggers effect
+store.actions.setLastName('Smith') // Triggers effect
+```
+
+## Custom Actions
+
+Create reusable actions with complex logic:
+
+```typescript
+const store = createStore(
+  {
+    firstName: 'John',
+    lastName: 'Doe',
+    email: ''
+  },
+  ({ actions, getState, reset }) => ({
+    setUser: (firstName: string, lastName: string, email: string) => {
+      actions.setFirstName(firstName)
+      actions.setLastName(lastName)
+      actions.setEmail(email)
+    },
+    clearUser: () => {
+      reset()
+    },
+    updateEmail: (email: string) => {
+      if (email.includes('@')) {
+        actions.setEmail(email)
+      }
+    }
+  })
+)
+
+// Use custom actions
+store.actions.setUser('Jane', 'Smith', 'jane@example.com')
+store.actions.clearUser()
+store.actions.updateEmail('invalid') // No update
+store.actions.updateEmail('valid@email.com') // Updates
+```
+
+<Tip>
+Custom actions are automatically batched, so multiple updates inside a custom action only trigger listeners once.
+</Tip>
+
+## Integration Examples
+
+### Vanilla JavaScript
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stan.js Vanilla Demo</title>
+</head>
+<body>
+  <div id="counter">0</div>
+  <button id="increment">+</button>
+  <button id="decrement">-</button>
+
+  <script type="module">
+    import { createStore } from 'stan-js/vanilla'
+
+    const store = createStore({ counter: 0 })
+
+    // Update DOM
+    store.effect(({ counter }) => {
+      document.getElementById('counter').textContent = counter
+    })
+
+    // Handle clicks
+    document.getElementById('increment').onclick = () => {
+      store.actions.setCounter(prev => prev + 1)
+    }
+
+    document.getElementById('decrement').onclick = () => {
+      store.actions.setCounter(prev => prev - 1)
+    }
+  </script>
+</body>
+</html>
+```
+
+### Vue.js
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+import { reactive, watchEffect } from 'vue'
+
+const stanStore = createStore({
+  counter: 0,
+  message: 'Hello'
+})
+
+export const useStore = () => {
+  const state = reactive(stanStore.getState())
+
+  // Sync Stan.js changes to Vue reactive state
+  stanStore.effect(newState => {
+    Object.assign(state, newState)
+  })
+
+  return {
+    state,
+    actions: stanStore.actions
+  }
+}
+```
+
+### Svelte
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+import { writable } from 'svelte/store'
+
+const stanStore = createStore({
+  counter: 0,
+  message: 'Hello'
+})
+
+export const counter = writable(stanStore.getState().counter)
+
+stanStore.effect(({ counter: newCounter }) => {
+  counter.set(newCounter)
+})
+
+export const setCounter = stanStore.actions.setCounter
+```
+
+### Node.js / Backend
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+
+const sessionStore = createStore({
+  activeSessions: new Map<string, Session>(),
+  requestCount: 0
+})
+
+// Track requests
+app.use((req, res, next) => {
+  sessionStore.actions.setRequestCount(prev => prev + 1)
+  next()
+})
+
+// Monitor state
+sessionStore.effect(({ requestCount }) => {
+  if (requestCount > 10000) {
+    console.warn('High request volume detected')
+  }
+})
+```
+
+## DevTools Integration
+
+Stan.js exposes stores globally for debugging:
+
+```javascript
+// In browser console
+globalThis['__stan-js__']
+// Array of all stores with their state and methods
+
+const { store, updateStore } = globalThis['__stan-js__'][0]
+console.log(store) // Current state
+updateStore({ counter: 100 }) // Update from DevTools
+```
+
+## Performance Considerations
+
+<CardGroup cols={2}>
+  <Card title="Selective Subscriptions" icon="filter">
+    Only subscribe to the keys you need. This minimizes unnecessary listener calls.
+  </Card>
+  <Card title="Batch Updates" icon="layer-group">
+    Use `batchUpdates()` when making multiple changes to trigger listeners only once.
+  </Card>
+  <Card title="Computed Values" icon="calculator">
+    Computed values are memoized and only recalculated when dependencies change.
+  </Card>
+  <Card title="Dispose Listeners" icon="trash">
+    Always dispose of effects and subscriptions when they're no longer needed to prevent memory leaks.
+  </Card>
+</CardGroup>
+
+## TypeScript Support
+
+Full type inference and type safety:
+
+```typescript
+const store = createStore({
+  counter: 0,
+  message: 'hello'
+})
+
+const state = store.getState()
+//    ^? { counter: number, message: string }
+
+store.actions.setCounter(5) // ✓
+store.actions.setCounter('invalid') // ✗ Type error
+
+store.effect(({ counter }) => {
+  console.log(counter.toFixed(2)) // ✓ TypeScript knows counter is a number
+})
+```
+
+See the [TypeScript guide](/guides/typescript) for advanced patterns.

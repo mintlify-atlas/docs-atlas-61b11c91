@@ -1,0 +1,284 @@
+---
+title: 'Stores'
+description: 'Understanding how stores work in Stan.js'
+---
+
+## What is a Store?
+
+A store in Stan.js is a centralized container for your application state. It provides a simple, type-safe way to manage state that can be accessed and updated from anywhere in your application.
+
+<Note>
+  Stan.js stores are built on vanilla JavaScript and can be used with or without React. The React integration uses `useSyncExternalStore` under the hood for optimal performance.
+</Note>
+
+## Creating a Store
+
+Stores are created using the `createStore` function. The simplest store requires just an initial state object:
+
+```typescript
+import { createStore } from 'stan-js'
+
+const { useStore, getState, actions, reset } = createStore({
+  counter: 0,
+  message: 'Hello, Stan!',
+  users: [] as Array<string>,
+})
+```
+
+### Return Values
+
+The `createStore` function returns several utilities:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `useStore` | Hook | React hook to access and subscribe to store state |
+| `getState` | Function | Get current state snapshot (non-reactive) |
+| `actions` | Object | Auto-generated setter functions for each state property |
+| `reset` | Function | Reset state values to their initial values |
+| `effect` | Function | Subscribe to state changes outside of React |
+| `batchUpdates` | Function | Batch multiple state updates into a single notification |
+
+## Auto-Generated Actions
+
+Stan.js automatically generates setter functions for each state property. The naming convention is `set` + capitalized property name:
+
+```typescript
+const { actions } = createStore({
+  counter: 0,
+  message: 'Hello',
+})
+
+// Auto-generated actions:
+actions.setCounter(1)
+actions.setMessage('World')
+```
+
+### Functional Updates
+
+Actions support functional updates, similar to React's `useState`:
+
+```typescript
+// Direct value
+actions.setCounter(5)
+
+// Functional update based on previous value
+actions.setCounter(prev => prev + 1)
+```
+
+<Info>
+  Stan.js uses shallow equality checks to prevent unnecessary re-renders. If the new value is equal to the previous value, subscribers won't be notified.
+</Info>
+
+## Implementation Details
+
+Under the hood, Stan.js stores work through a subscription system:
+
+### State Initialization
+
+From `src/vanilla/createStore.ts:84-139`, the store initializes state by:
+
+1. Processing each property in the initial state object
+2. Handling special values like Synchronizers (for persistence)
+3. Setting up getter properties for computed values
+4. Creating listener arrays for each state key
+
+```typescript
+const state = Object.keys(stateRaw).reduce((acc, key) => {
+  if (Object.getOwnPropertyDescriptor(stateRaw, key)?.get !== undefined) {
+    return acc // Skip getters during initialization
+  }
+
+  const value = stateRaw[key as TKey]
+
+  if (typeof value === 'function') {
+    throw new Error('Function cannot be passed as top level state value')
+  }
+
+  return {
+    ...acc,
+    [key]: value,
+  }
+}, {} as TState)
+```
+
+### Action Generation
+
+Actions are created at store initialization time (`src/vanilla/createStore.ts:20-50`):
+
+```typescript
+const actions = storeKeys.reduce((acc, key) => {
+  if (Object.getOwnPropertyDescriptor(stateRaw, key)?.get !== undefined) {
+    return acc // No actions for computed values
+  }
+
+  return {
+    ...acc,
+    [getActionKey(key)]: (value: Dispatch<TState, TKey>) => {
+      if (typeof value === 'function') {
+        const fn = value as (prevState: TState[TKey]) => TState[TKey]
+        const newValue = fn(state[key])
+
+        if (equal(state[key], newValue)) {
+          return
+        }
+
+        state[key] = newValue
+        notifyUpdates(key)
+        return
+      }
+
+      if (equal(state[key], value)) {
+        return
+      }
+
+      state[key] = value
+      notifyUpdates(key)
+    },
+  }
+}, {} as Actions<RemoveReadonly<TState>>)
+```
+
+### Readonly Properties
+
+Properties defined with getters are automatically treated as readonly. Stan.js won't generate setter actions for them:
+
+```typescript
+const { actions } = createStore({
+  message: 'hello',
+  get upperMessage() {
+    return this.message.toUpperCase()
+  },
+})
+
+// actions.setMessage exists ✓
+// actions.setUpperMessage does NOT exist ✓
+```
+
+## Accessing State
+
+### In React Components
+
+Use the `useStore` hook to access state reactively:
+
+```typescript
+function Counter() {
+  const { counter, setCounter } = useStore()
+  
+  return (
+    <div>
+      <p>Count: {counter}</p>
+      <button onClick={() => setCounter(prev => prev + 1)}>Increment</button>
+    </div>
+  )
+}
+```
+
+<Warning>
+  The `useStore` hook uses a Proxy to track which state properties you access. Only the accessed properties will trigger re-renders when they change. This is an optimization to prevent unnecessary renders.
+</Warning>
+
+### Outside React
+
+Use `getState()` to get a snapshot of the current state:
+
+```typescript
+const currentState = getState()
+console.log(currentState.counter)
+```
+
+<Note>
+  `getState()` returns a snapshot and is not reactive. Changes to the store won't update the returned object.
+</Note>
+
+## Resetting State
+
+The `reset` function restores state values to their initial values:
+
+```typescript
+const { reset, actions } = createStore({
+  counter: 0,
+  message: 'Hello',
+})
+
+actions.setCounter(5)
+actions.setMessage('World')
+
+// Reset specific keys
+reset('counter') // counter = 0, message = 'World'
+
+// Reset all keys
+reset() // counter = 0, message = 'Hello'
+```
+
+Implementation from `src/vanilla/createStore.ts:196-205`:
+
+```typescript
+const reset = (...keys: Array<keyof RemoveReadonly<TState>>) => {
+  batchUpdates(() => {
+    optionalArray(keys, storeKeys).forEach(key => {
+      const valueOrSynchronizer = stateRaw[key]
+      const initialValue = isSynchronizer(valueOrSynchronizer) 
+        ? valueOrSynchronizer.value 
+        : valueOrSynchronizer
+
+      getAction(key)?.(initialValue)
+    })
+  })
+}
+```
+
+## Type Safety
+
+Stan.js is built with TypeScript and provides full type inference:
+
+```typescript
+const { useStore, actions } = createStore({
+  count: 0,
+  name: 'John',
+})
+
+// TypeScript knows the exact types:
+actions.setCount(1) // ✓
+actions.setCount('invalid') // ✗ Type error
+
+// In components:
+function Component() {
+  const { count, name } = useStore()
+  // count: number
+  // name: string
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep it Simple" icon="circle-check">
+    Start with a simple state structure. You can always refactor later.
+  </Card>
+  <Card title="Use Descriptive Names" icon="tag">
+    Choose clear property names that describe what the state represents.
+  </Card>
+  <Card title="Initialize with Types" icon="code">
+    Always specify types for arrays and objects using `as` assertions.
+  </Card>
+  <Card title="Avoid Nested Objects" icon="layer-group">
+    Keep state flat when possible. Deep nesting can impact performance.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="State Management" href="/concepts/state-management" icon="database">
+    Learn patterns for managing complex state
+  </Card>
+  <Card title="Subscriptions" href="/concepts/subscriptions" icon="bell">
+    Understand the subscription system
+  </Card>
+  <Card title="Computed Values" href="/concepts/computed-values" icon="function">
+    Use getters for derived state
+  </Card>
+  <Card title="Custom Actions" href="/api/types/custom-actions" icon="wrench">
+    Create custom actions for complex logic
+  </Card>
+</CardGroup>

@@ -1,0 +1,261 @@
+---
+title: createScopedStore
+description: Create a store scoped to a React component tree using Context
+---
+
+## Overview
+
+`createScopedStore` creates a store that is scoped to a specific React component tree using React Context. This allows you to have multiple instances of the same store in different parts of your application, each with independent state.
+
+## Signature
+
+```typescript
+function createScopedStore<TState extends object>(
+  initialState: TState
+): {
+  StoreProvider: FunctionComponent<StoreProviderProps<TState>>
+  useScopedStore: () => Store<TState>
+  withStore: <TProps extends object>(
+    Component: FunctionComponent<TProps>,
+    initialValue?: Partial<TState>
+  ) => (props: TProps) => JSX.Element
+  useStore: () => TState
+  useStoreEffect: (run: (state: TState) => void, deps: DependencyList) => void
+}
+```
+
+## Parameters
+
+<ParamField path="initialState" type="TState" required>
+  The initial state object for the store. This defines the shape and default values for all store instances.
+</ParamField>
+
+## Returns
+
+An object containing:
+
+<ResponseField name="StoreProvider" type="FunctionComponent<StoreProviderProps<TState>>">
+  A React component that provides the store to its children via Context. See [StoreProvider](/api/scoped/store-provider).
+</ResponseField>
+
+<ResponseField name="useScopedStore" type="() => Store<TState>">
+  A hook that returns the complete store instance from the nearest StoreProvider. Useful for accessing the raw store API.
+</ResponseField>
+
+<ResponseField name="withStore" type="HOC">
+  A Higher-Order Component that wraps a component with a StoreProvider. See [withStore](/api/scoped/with-store).
+</ResponseField>
+
+<ResponseField name="useStore" type="() => TState">
+  A scoped version of `useStore` that reads from the nearest StoreProvider context.
+</ResponseField>
+
+<ResponseField name="useStoreEffect" type="(run: (state: TState) => void, deps: DependencyList) => void">
+  A scoped version of `useStoreEffect` that works with the nearest StoreProvider context.
+</ResponseField>
+
+## Usage
+
+### Basic Example
+
+```tsx
+import { createScopedStore } from '@stan-js/react'
+
+interface UserFormState {
+  name: string
+  email: string
+  isDirty: boolean
+}
+
+const {
+  StoreProvider,
+  useStore,
+  useStoreEffect
+} = createScopedStore<UserFormState>({
+  name: '',
+  email: '',
+  isDirty: false
+})
+
+function FormField() {
+  const { name, actions } = useStore()
+  
+  return (
+    <input
+      value={name}
+      onChange={(e) => actions.setName(e.target.value)}
+    />
+  )
+}
+
+function App() {
+  return (
+    <div>
+      <StoreProvider initialValue={{ name: 'Alice' }}>
+        <FormField />
+      </StoreProvider>
+      
+      <StoreProvider initialValue={{ name: 'Bob' }}>
+        <FormField />
+      </StoreProvider>
+    </div>
+  )
+}
+```
+
+### Multiple Independent Instances
+
+```tsx
+const { StoreProvider, useStore } = createScopedStore({
+  count: 0,
+  label: 'Counter'
+})
+
+function Counter() {
+  const { count, label, actions } = useStore()
+  
+  return (
+    <div>
+      <h3>{label}</h3>
+      <button onClick={() => actions.setCount(count + 1)}>
+        Count: {count}
+      </button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <>
+      {/* Each counter has independent state */}
+      <StoreProvider initialValue={{ label: 'First' }}>
+        <Counter />
+      </StoreProvider>
+      
+      <StoreProvider initialValue={{ label: 'Second' }}>
+        <Counter />
+      </StoreProvider>
+    </>
+  )
+}
+```
+
+### Using useScopedStore
+
+```tsx
+const { StoreProvider, useScopedStore } = createScopedStore({
+  items: [] as string[]
+})
+
+function ItemList() {
+  const store = useScopedStore()
+  
+  // Access raw store API
+  const addItem = (item: string) => {
+    store.actions.setItems([...store.state.items, item])
+  }
+  
+  // Subscribe to specific state changes
+  useEffect(() => {
+    const unsubscribe = store.subscribe((state) => {
+      console.log('Items changed:', state.items)
+    })
+    
+    return unsubscribe
+  }, [])
+  
+  return (
+    <div>
+      {store.state.items.map((item, i) => (
+        <div key={i}>{item}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Implementation Details
+
+### React Context
+
+The implementation creates a React Context using `createContext` from React:
+
+```typescript
+const StoreContext = createContext(createStore(initialState))
+```
+
+The context's display name is set to `'stan-js'` for easier debugging in React DevTools.
+
+### Store Isolation
+
+Each `StoreProvider` creates its own store instance:
+
+```typescript
+const [store] = useState(() => createStore(mergeState(initialState, initialValue ?? {})))
+```
+
+This ensures complete isolation between different parts of your component tree.
+
+### Hook Implementation
+
+All scoped hooks use `useContext` to access the nearest store:
+
+```typescript
+const useStore = () => {
+  const { useStore } = useContext(StoreContext)
+  return useStore()
+}
+```
+
+## Common Patterns
+
+### Form State Management
+
+```tsx
+const { StoreProvider, useStore } = createScopedStore({
+  formData: {},
+  errors: {},
+  isSubmitting: false
+})
+
+function EditUserForm({ userId }: { userId: string }) {
+  return (
+    <StoreProvider>
+      <FormFields />
+      <FormActions />
+    </StoreProvider>
+  )
+}
+```
+
+### Modal State
+
+```tsx
+const { StoreProvider, useStore, withStore } = createScopedStore({
+  isOpen: false,
+  data: null as any
+})
+
+const Modal = withStore(ModalContent, { isOpen: false })
+```
+
+### Nested Contexts
+
+```tsx
+function NestedExample() {
+  return (
+    <ParentStoreProvider>
+      {/* Child has access to parent store */}
+      <ChildStoreProvider>
+        {/* Can use both stores here */}
+      </ChildStoreProvider>
+    </ParentStoreProvider>
+  )
+}
+```
+
+## See Also
+
+- [StoreProvider](/api/scoped/store-provider) - Provider component
+- [withStore](/api/scoped/with-store) - HOC wrapper
+- [createStore](/api/create-store) - Base store creation

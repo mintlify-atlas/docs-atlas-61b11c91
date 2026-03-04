@@ -1,0 +1,474 @@
+---
+title: TypeScript
+description: Leverage Stan.js's full type safety and TypeScript features
+---
+
+Stan.js is written in TypeScript and provides excellent type inference, ensuring type safety throughout your application with minimal type annotations.
+
+## Automatic Type Inference
+
+Stan.js infers types from your initial state:
+
+```typescript
+import { createStore } from 'stan-js'
+
+const { useStore, actions, getState } = createStore({
+  counter: 0,
+  message: 'hello',
+  users: [] as Array<string>
+})
+
+// TypeScript knows the exact types
+const state = getState()
+//    ^? { counter: number, message: string, users: string[] }
+
+actions.setCounter(5) // ✓
+actions.setCounter('invalid') // ✗ Error: Argument of type 'string' is not assignable to parameter of type 'number'
+```
+
+## Action Type Safety
+
+Setter functions are fully typed:
+
+```typescript
+const { setCounter, setMessage } = useStore()
+
+// Direct value assignment
+setCounter(10) // ✓
+setCounter('10') // ✗ Type error
+
+// Functional updates
+setCounter(prev => prev + 1) // ✓
+setCounter(prev => prev + '1') // ✗ Type error: can't return string
+
+// Arrays
+const { setUsers } = useStore()
+setUsers([]) // ✓
+setUsers(['Alice', 'Bob']) // ✓
+setUsers(['Alice', 123]) // ✗ Type error
+setUsers(prev => [...prev, 'Charlie']) // ✓
+```
+
+## Explicit Type Annotations
+
+Use `as` or generics for complex types:
+
+```typescript
+interface User {
+  id: string
+  name: string
+  email: string
+}
+
+interface TodoItem {
+  id: string
+  text: string
+  completed: boolean
+}
+
+const { useStore } = createStore({
+  user: null as User | null,
+  todos: [] as Array<TodoItem>,
+  preferences: {} as Record<string, unknown>
+})
+```
+
+<Tip>
+Always annotate empty arrays and objects with their intended types to get proper type inference.
+</Tip>
+
+## Computed Values
+
+Computed values are type-safe and inferred:
+
+```typescript
+const { useStore } = createStore({
+  firstName: 'John',
+  lastName: 'Doe',
+  age: 30,
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`
+    //       ^? string (inferred)
+  },
+  get isAdult() {
+    return this.age >= 18
+    //       ^? boolean (inferred)
+  }
+})
+
+const { fullName, isAdult } = useStore()
+//      ^? string
+//                ^? boolean
+```
+
+## Custom Actions with Types
+
+Type custom actions for full safety:
+
+```typescript
+interface User {
+  id: string
+  name: string
+  email: string
+}
+
+const { useStore } = createStore(
+  {
+    user: null as User | null,
+    isLoading: false,
+    error: null as string | null
+  },
+  ({ actions }) => ({
+    fetchUser: async (userId: string) => {
+      actions.setIsLoading(true)
+      actions.setError(null)
+      
+      try {
+        const response = await fetch(`/api/users/${userId}`)
+        const user: User = await response.json()
+        actions.setUser(user)
+      } catch (err) {
+        actions.setError(err instanceof Error ? err.message : 'Unknown error')
+      } finally {
+        actions.setIsLoading(false)
+      }
+    },
+    clearUser: () => {
+      actions.setUser(null)
+    }
+  })
+)
+
+// Fully typed
+const { fetchUser, clearUser } = useStore()
+fetchUser('123') // ✓
+fetchUser(123) // ✗ Error: Argument of type 'number' is not assignable to parameter of type 'string'
+```
+
+## Readonly Properties
+
+Use `readonly` to prevent accidental mutations:
+
+```typescript
+const { useStore } = createStore({
+  config: {
+    apiUrl: 'https://api.example.com',
+    timeout: 5000
+  } as const,
+  readonly appVersion: '1.0.0'
+})
+
+const { setConfig, setAppVersion } = useStore()
+//                 ^? Property 'setAppVersion' does not exist
+
+// config is still mutable
+setConfig({ apiUrl: 'https://api2.example.com', timeout: 3000 }) // ✓
+```
+
+<Note>
+Readonly properties don't generate setter functions. Use getters for computed readonly values.
+</Note>
+
+## Storage with Types
+
+Type storage synchronizers:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+interface UserPreferences {
+  theme: 'light' | 'dark'
+  language: string
+  notifications: boolean
+}
+
+const { useStore } = createStore({
+  preferences: storage<UserPreferences>({
+    theme: 'light',
+    language: 'en',
+    notifications: true
+  })
+})
+
+const { preferences, setPreferences } = useStore()
+//      ^? UserPreferences
+
+setPreferences({ theme: 'dark', language: 'en', notifications: false }) // ✓
+setPreferences({ theme: 'blue', language: 'en', notifications: false }) // ✗ Error: 'blue' is not assignable to 'light' | 'dark'
+```
+
+## Custom Serialization Types
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+class CustomDate {
+  constructor(public date: Date) {}
+  
+  toJSON() {
+    return this.date.toISOString()
+  }
+}
+
+const { useStore } = createStore({
+  createdAt: storage(new CustomDate(new Date()), {
+    serialize: (value) => value.toJSON(),
+    deserialize: (str) => new CustomDate(new Date(str))
+  })
+})
+
+const { createdAt } = useStore()
+//      ^? CustomDate
+```
+
+## Scoped Store Types
+
+Scoped stores maintain full type safety:
+
+```typescript
+import { createScopedStore } from 'stan-js'
+
+interface Todo {
+  id: string
+  text: string
+  completed: boolean
+}
+
+const { StoreProvider, useStore, useScopedStore } = createScopedStore({
+  todos: [] as Array<Todo>,
+  filter: 'all' as 'all' | 'active' | 'completed'
+})
+
+const Component = () => {
+  const { todos, setTodos, filter, setFilter } = useStore()
+  //      ^? Todo[]
+  //                            ^? 'all' | 'active' | 'completed'
+
+  const store = useScopedStore()
+  //    ^? Full store API with types
+
+  return null
+}
+```
+
+## Vanilla Store Types
+
+```typescript
+import { createStore } from 'stan-js/vanilla'
+
+const store = createStore({
+  counter: 0,
+  message: 'hello'
+})
+
+const state = store.getState()
+//    ^? { counter: number, message: string }
+
+store.actions.setCounter(5) // ✓
+
+store.effect(({ counter }) => {
+  console.log(counter.toFixed(2)) // ✓ TypeScript knows counter is a number
+})
+```
+
+## Type Utilities
+
+Stan.js provides internal type utilities you can use:
+
+### RemoveReadonly
+
+Extract writable properties:
+
+```typescript
+import { RemoveReadonly } from 'stan-js'
+
+type State = {
+  counter: number
+  readonly appVersion: string
+}
+
+type WritableState = RemoveReadonly<State>
+//   ^? { counter: number }
+```
+
+### Actions Type
+
+Generate action types:
+
+```typescript
+import { Actions } from 'stan-js'
+
+type State = {
+  counter: number
+  message: string
+}
+
+type StateActions = Actions<State>
+//   ^? {
+//        setCounter: (value: number | ((prev: number) => number)) => void
+//        setMessage: (value: string | ((prev: string) => string)) => void
+//      }
+```
+
+## Generic Store Function
+
+Create reusable store factories:
+
+```typescript
+import { createStore } from 'stan-js'
+
+function createCounterStore<T extends { count: number }>(initialState: T) {
+  return createStore(initialState)
+}
+
+const store1 = createCounterStore({
+  count: 0,
+  label: 'Counter A'
+})
+
+const store2 = createCounterStore({
+  count: 10,
+  label: 'Counter B',
+  multiplier: 2
+})
+```
+
+## Discriminated Unions
+
+Use discriminated unions for state machines:
+
+```typescript
+type Status =
+  | { type: 'idle' }
+  | { type: 'loading' }
+  | { type: 'success'; data: string }
+  | { type: 'error'; error: string }
+
+const { useStore } = createStore({
+  status: { type: 'idle' } as Status
+})
+
+const Component = () => {
+  const { status, setStatus } = useStore()
+
+  if (status.type === 'success') {
+    console.log(status.data) // ✓ TypeScript narrows the type
+  }
+
+  if (status.type === 'error') {
+    console.log(status.error) // ✓
+  }
+
+  setStatus({ type: 'success', data: 'Hello' }) // ✓
+  setStatus({ type: 'success' }) // ✗ Error: Property 'data' is missing
+}
+```
+
+## Type Inference Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Annotate Empty Collections" icon="list">
+    Always type empty arrays and objects: `[] as Array<User>`, not just `[]`.
+  </Card>
+  <Card title="Use Union Types" icon="code-branch">
+    Define specific unions for string literals: `'light' | 'dark'` instead of `string`.
+  </Card>
+  <Card title="Leverage Computed Types" icon="calculator">
+    Let TypeScript infer computed values from getters automatically.
+  </Card>
+  <Card title="Type Custom Actions" icon="bolt">
+    Always provide parameter types for custom actions to ensure safety.
+  </Card>
+</CardGroup>
+
+## Common Type Patterns
+
+### Optional Data
+
+```typescript
+interface User {
+  id: string
+  name: string
+}
+
+const { useStore } = createStore({
+  user: null as User | null,
+  selectedId: undefined as string | undefined
+})
+```
+
+### Nested Objects
+
+```typescript
+interface AppState {
+  ui: {
+    sidebarOpen: boolean
+    theme: 'light' | 'dark'
+  }
+  data: {
+    users: Array<User>
+    posts: Array<Post>
+  }
+}
+
+const { useStore } = createStore({
+  ui: {
+    sidebarOpen: false,
+    theme: 'light'
+  } as AppState['ui'],
+  data: {
+    users: [],
+    posts: []
+  } as AppState['data']
+})
+```
+
+### Generic Collections
+
+```typescript
+const { useStore } = createStore({
+  cache: new Map<string, unknown>(),
+  queue: new Set<string>()
+})
+
+const { cache, setCache } = useStore()
+cache.set('key', 'value') // ✓
+setCache(new Map([['key2', 'value2']])) // ✓
+```
+
+## Troubleshooting Types
+
+### Type Widening
+
+Problem:
+```typescript
+const { useStore } = createStore({
+  theme: 'light' // TypeScript infers 'string', not 'light'
+})
+```
+
+Solution:
+```typescript
+const { useStore } = createStore({
+  theme: 'light' as 'light' | 'dark'
+})
+```
+
+### Function State
+
+Problem:
+```typescript
+const { useStore } = createStore({
+  callback: () => {} // ✗ Error: Function cannot be passed as top level state value
+})
+```
+
+Solution: Store functions in objects or use custom actions:
+```typescript
+const { useStore } = createStore(
+  { data: null },
+  () => ({
+    callback: () => console.log('Action!')
+  })
+)
+```

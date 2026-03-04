@@ -1,0 +1,268 @@
+---
+title: React Integration
+description: Learn how to use Stan.js with React hooks and components
+---
+
+Stan.js is designed with React in mind, providing seamless integration through hooks and automatic re-render optimization.
+
+## Basic Usage
+
+Create a store and use the `useStore` hook to access state and actions:
+
+```typescript
+import { createStore } from 'stan-js'
+
+export const { useStore, actions, getState } = createStore({
+  counter: 0,
+  message: 'Hello, Stan!',
+  users: [] as Array<string>
+})
+```
+
+### Using the Hook
+
+The `useStore` hook returns both state values and auto-generated setter functions:
+
+```typescript
+import { useStore } from './store'
+
+const Counter = () => {
+  const { counter, setCounter } = useStore()
+
+  return (
+    <section>
+      <button onClick={() => setCounter(prev => prev - 1)}>-</button>
+      <span>{counter}</span>
+      <button onClick={() => setCounter(prev => prev + 1)}>+</button>
+    </section>
+  )
+}
+```
+
+<Note>
+Each state property automatically gets a setter function named `set{PropertyName}` (camelCase). For example, `counter` gets `setCounter`, `userName` gets `setUserName`.
+</Note>
+
+## Optimized Re-renders
+
+Stan.js uses a **proxy-based subscription system** that only subscribes to the state values you actually use:
+
+```typescript
+const MessageInput = () => {
+  // Only subscribes to 'message', not 'counter' or 'users'
+  const { setMessage } = useStore()
+
+  return (
+    <input
+      onChange={event => setMessage(event.target.value)}
+    />
+  )
+}
+```
+
+<Tip>
+If a component only uses setter functions without accessing state values, it won't re-render when state changes. This is a powerful optimization for action-only components.
+</Tip>
+
+### Accessing State Without Subscriptions
+
+Use `getState()` to read current values without triggering re-renders:
+
+```typescript
+import { getState } from './store'
+
+const MessageInput = () => {
+  const { setMessage } = useStore()
+
+  return (
+    <input
+      defaultValue={getState().message}
+      onChange={event => setMessage(event.target.value)}
+    />
+  )
+}
+```
+
+## Computed Values
+
+Define computed properties using getters for derived state:
+
+```typescript
+export const { useStore } = createStore({
+  message: 'hello world',
+  get upperCaseMessage() {
+    return this.message.toUpperCase()
+  }
+})
+```
+
+```typescript
+const Message = () => {
+  const { upperCaseMessage } = useStore()
+  return <span>Uppercased: <b>{upperCaseMessage}</b></span>
+}
+```
+
+<Note>
+Computed values automatically update when their dependencies change. Stan.js tracks which properties are accessed in the getter.
+</Note>
+
+## Custom Actions
+
+Create custom actions that perform multiple updates atomically:
+
+```typescript
+export const { useStore } = createStore(
+  {
+    firstName: 'John',
+    lastName: 'Doe'
+  },
+  ({ actions }) => ({
+    setUser: (firstName: string, lastName: string) => {
+      actions.setFirstName(firstName)
+      actions.setLastName(lastName)
+    }
+  })
+)
+```
+
+Custom actions are automatically batched to prevent multiple re-renders:
+
+```typescript
+const UserForm = () => {
+  const { setUser } = useStore()
+
+  const handleSubmit = () => {
+    // Only triggers ONE re-render, not two
+    setUser('Jane', 'Smith')
+  }
+
+  return <button onClick={handleSubmit}>Update User</button>
+}
+```
+
+## Effects and Side Effects
+
+Use `useStoreEffect` to react to state changes:
+
+```typescript
+import { useStoreEffect } from './store'
+
+const UserLogger = () => {
+  useStoreEffect(state => {
+    console.log('State changed:', state.counter)
+  })
+
+  return null
+}
+```
+
+The effect automatically tracks which state values you access and only runs when those values change:
+
+```typescript
+useStoreEffect(({ counter }) => {
+  // Only runs when 'counter' changes, not 'message' or 'users'
+  console.log('Counter changed:', counter)
+})
+```
+
+### Dependency Array
+
+Add a dependency array to trigger effects on external changes:
+
+```typescript
+const UserSync = ({ userId }) => {
+  useStoreEffect(state => {
+    syncUserData(userId, state)
+  }, [userId])
+
+  return null
+}
+```
+
+## Resetting State
+
+Reset specific values or the entire store to initial state:
+
+```typescript
+import { reset } from './store'
+
+const ResetButton = () => {
+  return (
+    <>
+      <button onClick={() => reset('counter')}>Reset Counter</button>
+      <button onClick={() => reset()}>Reset All</button>
+    </>
+  )
+}
+```
+
+## Updates Outside React
+
+Use actions directly for updates outside React components:
+
+```typescript
+import { actions } from './store'
+
+// Update state from anywhere
+setInterval(() => {
+  actions.setCurrentTime(new Date())
+}, 1000)
+
+// Async updates work seamlessly
+const fetchUsers = async () => {
+  const response = await fetch('/api/users')
+  const data = await response.json()
+  actions.setUsers(data)
+}
+```
+
+<Warning>
+While you can update state from anywhere, be cautious with updates during render. Stan.js handles this correctly, but it's generally better to use effects or event handlers.
+</Warning>
+
+## Batch Updates
+
+Manually batch multiple updates to trigger a single re-render:
+
+```typescript
+import { batchUpdates, actions } from './store'
+
+const handleBulkUpdate = () => {
+  batchUpdates(() => {
+    actions.setCounter(0)
+    actions.setMessage('Reset')
+    actions.setUsers([])
+  })
+  // Only ONE re-render happens after all updates
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Split Components" icon="puzzle-piece">
+    Create small components that only access the state they need. This minimizes re-renders.
+  </Card>
+  <Card title="Use getState Wisely" icon="eye">
+    Use `getState()` for one-time reads that don't need to trigger re-renders.
+  </Card>
+  <Card title="Leverage Computed Values" icon="calculator">
+    Use getters for derived state instead of calculating in components.
+  </Card>
+  <Card title="Custom Actions" icon="bolt">
+    Group related updates in custom actions for better encapsulation and automatic batching.
+  </Card>
+</CardGroup>
+
+## Type Safety
+
+Stan.js provides full TypeScript support with automatic type inference:
+
+```typescript
+const { counter, setCounter } = useStore()
+//      ^? number
+//                 ^? (value: number | ((prev: number) => number)) => void
+```
+
+See the [TypeScript guide](/guides/typescript) for advanced type patterns.

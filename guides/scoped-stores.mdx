@@ -1,0 +1,371 @@
+---
+title: Scoped Stores
+description: Create context-based scoped stores for component-level state isolation
+---
+
+Scoped stores allow you to create isolated store instances for different parts of your component tree, perfect for reusable components or multi-tenant applications.
+
+## Why Scoped Stores?
+
+Global stores are great for application-wide state, but sometimes you need:
+
+- **Isolated state** for reusable components
+- **Multiple instances** of the same component with different data
+- **Server-side rendering** with per-request state
+- **Multi-tenant** applications with separate data per tenant
+
+## Basic Usage
+
+Create a scoped store using `createScopedStore`:
+
+```typescript
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0
+})
+```
+
+Wrap components with `StoreProvider` to create isolated instances:
+
+```typescript
+import { StoreProvider, useStore } from './store'
+
+const Counter = () => {
+  const { counter, setCounter } = useStore()
+
+  return (
+    <div>
+      <span>{counter}</span>
+      <button onClick={() => setCounter(prev => prev + 1)}>+</button>
+    </div>
+  )
+}
+
+const App = () => (
+  <div>
+    <StoreProvider initialValue={{ user: 'Alice' }}>
+      <Counter /> {/* Independent counter */}
+    </StoreProvider>
+    
+    <StoreProvider initialValue={{ user: 'Bob' }}>
+      <Counter /> {/* Independent counter */}
+    </StoreProvider>
+  </div>
+)
+```
+
+Each `StoreProvider` creates a completely isolated store instance.
+
+## Initial Values
+
+Override specific state values when creating a provider:
+
+```typescript
+const { StoreProvider, useStore } = createScopedStore({
+  firstName: 'John',
+  lastName: 'Smith'
+})
+
+const App = () => (
+  <StoreProvider initialValue={{ lastName: 'Doe' }}>
+    <User />
+  </StoreProvider>
+)
+
+const User = () => {
+  const { firstName, lastName } = useStore()
+  // firstName: 'John' (default), lastName: 'Doe' (overridden)
+  return <div>{firstName} {lastName}</div>
+}
+```
+
+<Note>
+Only the values you specify in `initialValue` are overridden. Other values use the defaults from `createScopedStore`.
+</Note>
+
+## Nested Providers
+
+Providers can be nested for hierarchical state:
+
+```typescript
+const { StoreProvider, useStore } = createScopedStore({
+  userName: 'Guest'
+})
+
+const User = ({ id }: { id: string }) => {
+  const { userName } = useStore()
+  return <p data-testid={id}>{userName}</p>
+}
+
+const App = () => (
+  <>
+    <User id="1" /> {/* Guest */}
+    
+    <StoreProvider initialValue={{ userName: 'Alice' }}>
+      <User id="2" /> {/* Alice */}
+      
+      <StoreProvider initialValue={{ userName: 'Bob' }}>
+        <User id="3" /> {/* Bob */}
+      </StoreProvider>
+    </StoreProvider>
+  </>
+)
+```
+
+From `src/tests/scoped.test.tsx:9`:
+
+```typescript
+expect(screen.getByTestId('1').innerText).toBe('Tonny Jest')
+expect(screen.getByTestId('2').innerText).toBe('Johnny Test')
+expect(screen.getByTestId('3').innerText).toBe('Test Johnny')
+```
+
+## Accessing the Store Instance
+
+Use `useScopedStore()` to access the entire store API:
+
+```typescript
+const { StoreProvider, useScopedStore } = createScopedStore({
+  counter: 0
+})
+
+const Counter = () => {
+  const store = useScopedStore()
+  
+  // Access all store methods
+  const state = store.getState()
+  store.actions.setCounter(5)
+  store.reset()
+  
+  return <div>{state.counter}</div>
+}
+```
+
+## Higher-Order Component Pattern
+
+Use `withStore` to wrap components with a provider:
+
+```typescript
+const { withStore, useStore } = createScopedStore({
+  firstName: 'John',
+  lastName: 'Smith'
+})
+
+const User = () => {
+  const { firstName, lastName } = useStore()
+  return <div>{firstName} {lastName}</div>
+}
+
+// Wrap with provider and initial values
+const UserWithStore = withStore(User, { lastName: 'Doe' })
+
+// Use anywhere without manual provider wrapping
+const App = () => <UserWithStore />
+```
+
+## Dynamic Initial Values
+
+Initial values can change, and the store will update:
+
+```typescript
+const { StoreProvider, useStore } = createScopedStore({
+  message: ''
+})
+
+const Display = () => {
+  const { message } = useStore()
+  return <p>{message}</p>
+}
+
+const App = () => {
+  const [text, setText] = useState('Initial')
+
+  return (
+    <>
+      <input onChange={e => setText(e.target.value)} />
+      <StoreProvider initialValue={{ message: text }}>
+        <Display />
+      </StoreProvider>
+    </>
+  )
+}
+```
+
+When `initialValue` changes, the scoped store updates automatically (from `src/scoped.tsx:33`).
+
+<Warning>
+Changing `initialValue` triggers updates. Use this intentionally for dynamic initialization, not for frequent updates.
+</Warning>
+
+## Scoped Effects
+
+Use `useStoreEffect` with scoped stores:
+
+```typescript
+const { StoreProvider, useStoreEffect } = createScopedStore({
+  counter: 0
+})
+
+const Logger = () => {
+  useStoreEffect(({ counter }) => {
+    console.log('Counter in this scope:', counter)
+  })
+
+  return null
+}
+
+const App = () => (
+  <>
+    <StoreProvider initialValue={{ counter: 1 }}>
+      <Logger /> {/* Logs changes from scope 1 */}
+    </StoreProvider>
+    
+    <StoreProvider initialValue={{ counter: 2 }}>
+      <Logger /> {/* Logs changes from scope 2 */}
+    </StoreProvider>
+  </>
+)
+```
+
+## SSR with Scoped Stores
+
+Scoped stores are perfect for server-side rendering:
+
+```typescript
+// store.ts
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore } = createScopedStore({
+  user: '',
+  counter: 0
+})
+```
+
+```typescript
+// page.tsx (Next.js)
+import { StoreProvider } from './store'
+
+export default function Page({ user }: { user: string }) {
+  return (
+    <StoreProvider initialValue={{ user }}>
+      <Counter />
+    </StoreProvider>
+  )
+}
+```
+
+Each request gets its own isolated store instance.
+
+## Computed Values in Scoped Stores
+
+Computed values work seamlessly:
+
+```typescript
+const { StoreProvider, useStore } = createScopedStore({
+  firstName: 'John',
+  lastName: 'Smith',
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`
+  }
+})
+
+const User = () => {
+  const { fullName } = useStore()
+  return <div>{fullName}</div>
+}
+
+const App = () => (
+  <StoreProvider initialValue={{ lastName: 'Doe' }}>
+    <User /> {/* John Doe */}
+  </StoreProvider>
+)
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Reusable Components" icon="puzzle-piece">
+    Create self-contained components with their own state management.
+  </Card>
+  <Card title="Modal Dialogs" icon="window-maximize">
+    Each modal instance gets its own state, preventing conflicts.
+  </Card>
+  <Card title="Multi-step Forms" icon="list-check">
+    Isolate form state per instance while sharing the form component.
+  </Card>
+  <Card title="SSR Applications" icon="server">
+    Per-request state isolation in Next.js, Remix, or other SSR frameworks.
+  </Card>
+</CardGroup>
+
+## Real-World Example
+
+A reusable wizard component:
+
+```typescript
+// wizard-store.ts
+import { createScopedStore } from 'stan-js'
+
+export const { StoreProvider, useStore, withStore } = createScopedStore({
+  currentStep: 0,
+  data: {} as Record<string, unknown>
+})
+
+export const useWizard = () => {
+  const { currentStep, data, setCurrentStep, setData } = useStore()
+
+  const nextStep = () => setCurrentStep(prev => prev + 1)
+  const prevStep = () => setCurrentStep(prev => Math.max(0, prev - 1))
+  const updateData = (key: string, value: unknown) => {
+    setData(prev => ({ ...prev, [key]: value }))
+  }
+
+  return { currentStep, data, nextStep, prevStep, updateData }
+}
+```
+
+```typescript
+// Wizard.tsx
+import { StoreProvider } from './wizard-store'
+import { useWizard } from './wizard-store'
+
+const WizardStep = ({ children }: { children: ReactNode }) => {
+  const { currentStep, nextStep, prevStep } = useWizard()
+
+  return (
+    <div>
+      {children}
+      <button onClick={prevStep} disabled={currentStep === 0}>Back</button>
+      <button onClick={nextStep}>Next</button>
+    </div>
+  )
+}
+
+const Wizard = ({ children }: { children: ReactNode }) => (
+  <StoreProvider>
+    {children}
+  </StoreProvider>
+)
+
+// Usage: Multiple independent wizards
+const App = () => (
+  <>
+    <Wizard>
+      <WizardStep>Step 1</WizardStep>
+    </Wizard>
+    
+    <Wizard>
+      <WizardStep>Another wizard, independent state</WizardStep>
+    </Wizard>
+  </>
+)
+```
+
+## Best Practices
+
+- **Use global stores for app-wide state**, scoped stores for component-level state
+- **Avoid deeply nested providers** – it can make state flow hard to trace
+- **Initialize with meaningful defaults** so components work without providers
+- **Document the scope** – make it clear which components expect which provider

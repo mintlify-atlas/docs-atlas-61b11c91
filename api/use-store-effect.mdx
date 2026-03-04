@@ -1,0 +1,348 @@
+---
+title: useStoreEffect
+description: React hook to subscribe to store changes with dependency tracking
+---
+
+## Overview
+
+The `useStoreEffect` hook allows you to subscribe to store state changes and react to them within React components. It combines the behavior of the store's `effect` method with React's lifecycle management and dependency tracking.
+
+## Signature
+
+```typescript
+function useStoreEffect(
+  run: (state: TState) => void,
+  deps?: DependencyList
+): void
+```
+
+## Parameters
+
+<ParamField path="run" type="(state: TState) => void" required>
+  Callback function that receives the current store state. This function is called:
+  - Immediately on mount
+  - Whenever accessed state properties change
+  - Whenever dependencies in `deps` array change
+  
+  The callback automatically subscribes to only the state properties it accesses.
+</ParamField>
+
+<ParamField path="deps" type="DependencyList" default="[]">
+  Optional dependency array, similar to `useEffect`. When dependencies change, the callback is re-executed.
+  
+  Default is an empty array, meaning the callback only runs on state changes.
+</ParamField>
+
+## Return Value
+
+Void. The hook handles subscription and cleanup automatically.
+
+## Behavior
+
+- **Automatic Subscription**: Subscribes to state properties accessed in the callback
+- **Lifecycle Management**: Automatically cleans up subscription on unmount
+- **Dependency Tracking**: Re-runs callback when `deps` change (but not on mount to avoid double execution)
+- **Selective Updates**: Only triggers when accessed state properties change
+- **Stable Reference**: Updates the callback reference without re-subscribing
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { createStore } from '@stan-js/react'
+
+const store = createStore({
+  count: 0,
+  name: 'Counter'
+})
+
+function Counter() {
+  store.useStoreEffect(({ count }) => {
+    console.log('Count changed:', count)
+  })
+  
+  return (
+    <button onClick={() => store.actions.setCount(prev => prev + 1)}>
+      Increment
+    </button>
+  )
+}
+
+// Logs: "Count changed: 0" (on mount)
+// Logs: "Count changed: 1" (on button click)
+```
+
+### Selective Subscriptions
+
+```typescript
+const store = createStore({
+  user: 'John',
+  theme: 'light',
+  count: 0
+})
+
+function UserLogger() {
+  // Only runs when 'user' changes, not 'theme' or 'count'
+  store.useStoreEffect(({ user }) => {
+    console.log('User changed:', user)
+    // Could log to analytics, localStorage, etc.
+  })
+  
+  return null
+}
+```
+
+### With Dependencies
+
+```typescript
+const store = createStore({
+  items: []
+})
+
+function ItemList({ filter }: { filter: string }) {
+  store.useStoreEffect(
+    ({ items }) => {
+      const filtered = items.filter(item => 
+        item.name.includes(filter)
+      )
+      console.log('Filtered items:', filtered)
+    },
+    [filter] // Re-run when filter changes
+  )
+  
+  return <div>Check console for filtered items</div>
+}
+```
+
+### Side Effects: LocalStorage Sync
+
+```typescript
+const settingsStore = createStore({
+  theme: 'light',
+  language: 'en'
+})
+
+function App() {
+  // Sync settings to localStorage whenever they change
+  settingsStore.useStoreEffect(({ theme, language }) => {
+    localStorage.setItem('app-settings', JSON.stringify({ theme, language }))
+  })
+  
+  return <div>Settings are synced to localStorage</div>
+}
+```
+
+### Side Effects: Analytics Tracking
+
+```typescript
+const userStore = createStore({
+  userId: null as string | null,
+  isLoggedIn: false
+})
+
+function AnalyticsTracker() {
+  userStore.useStoreEffect(({ userId, isLoggedIn }) => {
+    if (isLoggedIn && userId) {
+      analytics.identify(userId)
+      analytics.track('User Logged In')
+    }
+  })
+  
+  return null
+}
+```
+
+### Side Effects: Document Title
+
+```typescript
+const notificationStore = createStore({
+  unreadCount: 0
+})
+
+function DocumentTitleUpdater() {
+  notificationStore.useStoreEffect(({ unreadCount }) => {
+    document.title = unreadCount > 0 
+      ? `(${unreadCount}) My App` 
+      : 'My App'
+  })
+  
+  return null
+}
+```
+
+### Computed Property Tracking
+
+```typescript
+const cartStore = createStore({
+  items: [] as CartItem[],
+  get total() {
+    return this.items.reduce((sum, item) => sum + item.price, 0)
+  }
+})
+
+function CartLogger() {
+  // Runs when 'total' changes (which depends on 'items')
+  cartStore.useStoreEffect(({ total }) => {
+    console.log('Cart total:', total)
+    
+    if (total > 100) {
+      console.log('Free shipping eligible!')
+    }
+  })
+  
+  return null
+}
+```
+
+### Multiple State Properties
+
+```typescript
+const formStore = createStore({
+  firstName: '',
+  lastName: '',
+  email: ''
+})
+
+function FormValidator() {
+  formStore.useStoreEffect(({ firstName, lastName, email }) => {
+    const isValid = firstName && lastName && email.includes('@')
+    console.log('Form is valid:', isValid)
+  })
+  
+  return null
+}
+```
+
+### With External Dependencies
+
+```typescript
+const messageStore = createStore({
+  messages: [] as Message[]
+})
+
+function MessageNotifier({ isEnabled }: { isEnabled: boolean }) {
+  messageStore.useStoreEffect(
+    ({ messages }) => {
+      if (isEnabled && messages.length > 0) {
+        const latestMessage = messages[messages.length - 1]
+        toast.info(latestMessage.text)
+      }
+    },
+    [isEnabled]
+  )
+  
+  return null
+}
+```
+
+### Cleanup with Dependencies
+
+```typescript
+const connectionStore = createStore({
+  isConnected: false,
+  connectionId: null as string | null
+})
+
+function ConnectionMonitor({ apiKey }: { apiKey: string }) {
+  connectionStore.useStoreEffect(
+    ({ isConnected, connectionId }) => {
+      if (isConnected && connectionId) {
+        // Use the latest apiKey from props
+        monitorConnection(connectionId, apiKey)
+      }
+    },
+    [apiKey]
+  )
+  
+  return null
+}
+```
+
+## Comparison with useEffect
+
+| Feature | useStoreEffect | useEffect |
+|---------|----------------|------------|
+| Subscribes to store | Yes, automatically | No, manual via external subscription |
+| Runs on mount | Yes, once | Yes, respects deps |
+| Selective listening | Yes, proxy-based | No |
+| Cleanup | Automatic | Manual return function |
+| Re-subscription | No, updates callback reference | Yes, if deps change |
+
+## Comparison with store.effect
+
+`useStoreEffect` is a React wrapper around the store's `effect` method with additional features:
+
+```typescript
+// Vanilla effect (outside React)
+const dispose = store.effect(({ count }) => {
+  console.log(count)
+})
+// Must manually call dispose()
+
+// React hook (inside component)
+store.useStoreEffect(({ count }) => {
+  console.log(count)
+})
+// Automatically cleaned up on unmount
+```
+
+## Performance Considerations
+
+<Tip>
+  The hook only subscribes to state properties accessed in the callback, making it efficient even with large stores.
+</Tip>
+
+```typescript
+// Only subscribes to 'count', not 'name' or 'theme'
+store.useStoreEffect(({ count }) => {
+  console.log(count)
+})
+```
+
+<Tip>
+  Keep the dependency array stable to avoid unnecessary re-executions.
+</Tip>
+
+```typescript
+// Good: Stable primitive
+const [filter, setFilter] = useState('test')
+store.useStoreEffect(({ items }) => {
+  // ...
+}, [filter])
+
+// Avoid: New object/array on every render
+store.useStoreEffect(({ items }) => {
+  // ...
+}, [{ filter: 'test' }]) // New object every render!
+```
+
+## Type Safety
+
+The hook is fully type-safe:
+
+```typescript
+const store = createStore({
+  count: 0,
+  user: { name: 'John', age: 30 }
+})
+
+function Component() {
+  store.useStoreEffect(({ count, user }) => {
+    // TypeScript knows:
+    // count: number
+    // user: { name: string, age: number }
+    
+    console.log(count, user.name)
+  })
+}
+```
+
+## Notes
+
+- The callback receives a proxy of the state to track accessed properties
+- Accessing a property in conditional logic will still create a subscription
+- The hook prevents double execution on mount when dependencies are provided
+- Subscriptions are automatically cleaned up when the component unmounts
+- The callback reference is updated without re-subscribing to optimize performance
+- Unlike `useEffect`, the callback always receives the latest state snapshot

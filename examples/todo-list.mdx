@@ -1,0 +1,448 @@
+---
+title: Todo List with Persistence
+description: Build a todo list app with localStorage persistence
+---
+
+This example demonstrates how to work with arrays, complex state updates, and data persistence using Stan.js's built-in storage synchronizer.
+
+## Features
+
+- Add, complete, and delete todos
+- Filter todos by status
+- Persist data to localStorage
+- TypeScript-first design
+
+## Store Setup with Persistence
+
+Use the `storage` synchronizer to automatically persist todos to localStorage:
+
+```typescript store.ts
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js/storage'
+
+type Todo = {
+    id: string
+    text: string
+    completed: boolean
+    createdAt: number
+}
+
+export const { useStore, getState, reset } = createStore({
+    // Persisted to localStorage automatically
+    todos: storage<Todo[]>([], {
+        storageKey: 'my-todos',
+    }),
+    filter: 'all' as 'all' | 'active' | 'completed',
+    // Computed value - filtered todos
+    get filteredTodos() {
+        if (this.filter === 'all') return this.todos
+        if (this.filter === 'active') return this.todos.filter(t => !t.completed)
+        return this.todos.filter(t => t.completed)
+    },
+    // Computed value - count of active todos
+    get activeCount() {
+        return this.todos.filter(t => !t.completed).length
+    },
+})
+```
+
+<Note>
+The `storage` synchronizer:
+- Saves to localStorage on every update
+- Loads persisted data on initialization
+- Syncs across browser tabs automatically
+- Works with SSR (falls back to memory storage)
+</Note>
+
+## Todo Operations
+
+Create helper functions for common todo operations:
+
+```typescript todoHelpers.ts
+import { useStore } from './store'
+
+export const useTodoActions = () => {
+    const { setTodos } = useStore()
+
+    const addTodo = (text: string) => {
+        setTodos(prev => [
+            ...prev,
+            {
+                id: crypto.randomUUID(),
+                text,
+                completed: false,
+                createdAt: Date.now(),
+            },
+        ])
+    }
+
+    const toggleTodo = (id: string) => {
+        setTodos(prev =>
+            prev.map(todo =>
+                todo.id === id
+                    ? { ...todo, completed: !todo.completed }
+                    : todo
+            )
+        )
+    }
+
+    const deleteTodo = (id: string) => {
+        setTodos(prev => prev.filter(todo => todo.id !== id))
+    }
+
+    const clearCompleted = () => {
+        setTodos(prev => prev.filter(todo => !todo.completed))
+    }
+
+    return { addTodo, toggleTodo, deleteTodo, clearCompleted }
+}
+```
+
+## Component Implementation
+
+<Tabs>
+  <Tab title="Complete App">
+    ```tsx App.tsx
+import { useState } from 'react'
+import { useStore } from './store'
+import { useTodoActions } from './todoHelpers'
+
+export const App = () => {
+    const [input, setInput] = useState('')
+    const { filteredTodos, filter, activeCount, setFilter } = useStore()
+    const { addTodo, toggleTodo, deleteTodo, clearCompleted } = useTodoActions()
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (input.trim()) {
+            addTodo(input.trim())
+            setInput('')
+        }
+    }
+
+    return (
+        <div>
+            <h1>Todos</h1>
+            
+            <form onSubmit={handleSubmit}>
+                <input
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    placeholder="What needs to be done?"
+                />
+                <button type="submit">Add</button>
+            </form>
+
+            <div>
+                <button
+                    onClick={() => setFilter('all')}
+                    disabled={filter === 'all'}
+                >
+                    All
+                </button>
+                <button
+                    onClick={() => setFilter('active')}
+                    disabled={filter === 'active'}
+                >
+                    Active ({activeCount})
+                </button>
+                <button
+                    onClick={() => setFilter('completed')}
+                    disabled={filter === 'completed'}
+                >
+                    Completed
+                </button>
+            </div>
+
+            <ul>
+                {filteredTodos.map(todo => (
+                    <li key={todo.id}>
+                        <input
+                            type="checkbox"
+                            checked={todo.completed}
+                            onChange={() => toggleTodo(todo.id)}
+                        />
+                        <span
+                            style={{
+                                textDecoration: todo.completed
+                                    ? 'line-through'
+                                    : 'none',
+                            }}
+                        >
+                            {todo.text}
+                        </span>
+                        <button onClick={() => deleteTodo(todo.id)}>×</button>
+                    </li>
+                ))}
+            </ul>
+
+            {filteredTodos.length === 0 && (
+                <p>No todos to display</p>
+            )}
+
+            {activeCount > 0 && (
+                <button onClick={clearCompleted}>Clear completed</button>
+            )}
+        </div>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Add Todo Form">
+    ```tsx AddTodoForm.tsx
+import { useState } from 'react'
+import { useTodoActions } from './todoHelpers'
+
+export const AddTodoForm = () => {
+    const [input, setInput] = useState('')
+    const { addTodo } = useTodoActions()
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (input.trim()) {
+            addTodo(input.trim())
+            setInput('')
+        }
+    }
+
+    return (
+        <form onSubmit={handleSubmit}>
+            <input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="What needs to be done?"
+            />
+            <button type="submit">Add</button>
+        </form>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Todo Item">
+    ```tsx TodoItem.tsx
+import { useTodoActions } from './todoHelpers'
+
+type Props = {
+    todo: {
+        id: string
+        text: string
+        completed: boolean
+    }
+}
+
+export const TodoItem = ({ todo }: Props) => {
+    const { toggleTodo, deleteTodo } = useTodoActions()
+
+    return (
+        <li>
+            <input
+                type="checkbox"
+                checked={todo.completed}
+                onChange={() => toggleTodo(todo.id)}
+            />
+            <span
+                style={{
+                    textDecoration: todo.completed ? 'line-through' : 'none',
+                }}
+            >
+                {todo.text}
+            </span>
+            <button onClick={() => deleteTodo(todo.id)}>×</button>
+        </li>
+    )
+}
+    ```
+  </Tab>
+  <Tab title="Filter Controls">
+    ```tsx FilterControls.tsx
+import { useStore } from './store'
+
+export const FilterControls = () => {
+    const { filter, activeCount, setFilter } = useStore()
+
+    return (
+        <div>
+            <button
+                onClick={() => setFilter('all')}
+                disabled={filter === 'all'}
+            >
+                All
+            </button>
+            <button
+                onClick={() => setFilter('active')}
+                disabled={filter === 'active'}
+            >
+                Active ({activeCount})
+            </button>
+            <button
+                onClick={() => setFilter('completed')}
+                disabled={filter === 'completed'}
+            >
+                Completed
+            </button>
+        </div>
+    )
+}
+    ```
+  </Tab>
+</Tabs>
+
+## Storage Configuration
+
+### Custom Storage Key
+
+By default, Stan.js uses the property name as the storage key. Customize it:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+const { useStore } = createStore({
+    todos: storage<Todo[]>([], {
+        storageKey: 'my-app-todos', // Custom key in localStorage
+    }),
+})
+```
+
+### Custom Serialization
+
+Control how data is serialized/deserialized:
+
+```typescript
+import { storage } from 'stan-js/storage'
+
+const { useStore } = createStore({
+    todos: storage<Todo[]>([], {
+        serialize: (value) => {
+            // Custom serialization logic
+            return JSON.stringify(value)
+        },
+        deserialize: (value) => {
+            // Custom deserialization logic
+            const parsed = JSON.parse(value)
+            // Migrate old data format if needed
+            return parsed.map(todo => ({
+                ...todo,
+                createdAt: todo.createdAt ?? Date.now(),
+            }))
+        },
+    }),
+})
+```
+
+## Working with Arrays
+
+<AccordionGroup>
+  <Accordion title="Adding Items">
+    ```typescript
+    // Add to end
+    setTodos(prev => [...prev, newTodo])
+
+    // Add to beginning
+    setTodos(prev => [newTodo, ...prev])
+
+    // Insert at specific index
+    setTodos(prev => [
+        ...prev.slice(0, index),
+        newTodo,
+        ...prev.slice(index),
+    ])
+    ```
+  </Accordion>
+  
+  <Accordion title="Updating Items">
+    ```typescript
+    // Update by ID
+    setTodos(prev =>
+        prev.map(todo =>
+            todo.id === targetId
+                ? { ...todo, completed: !todo.completed }
+                : todo
+        )
+    )
+
+    // Update by index
+    setTodos(prev =>
+        prev.map((todo, idx) =>
+            idx === targetIndex
+                ? { ...todo, text: newText }
+                : todo
+        )
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Removing Items">
+    ```typescript
+    // Remove by ID
+    setTodos(prev => prev.filter(todo => todo.id !== targetId))
+
+    // Remove by index
+    setTodos(prev => prev.filter((_, idx) => idx !== targetIndex))
+
+    // Remove all completed
+    setTodos(prev => prev.filter(todo => !todo.completed))
+
+    // Clear all
+    setTodos([])
+    ```
+  </Accordion>
+  
+  <Accordion title="Sorting and Filtering">
+    ```typescript
+    // Sort by date
+    setTodos(prev => [...prev].sort((a, b) => b.createdAt - a.createdAt))
+
+    // Note: Use computed values for filtering instead of updating state
+    get activeTodos() {
+        return this.todos.filter(t => !t.completed)
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Cross-Tab Synchronization
+
+The storage synchronizer automatically syncs state across browser tabs:
+
+```typescript
+// Tab 1: Add a todo
+addTodo('Learn Stan.js')
+
+// Tab 2: Automatically receives the update!
+// No extra code needed - it just works
+```
+
+<Info>
+Cross-tab sync uses the browser's `storage` event. Updates happen in real-time across all open tabs of your app.
+</Info>
+
+## SSR Compatibility
+
+The storage synchronizer works with Server-Side Rendering:
+
+```typescript
+// During SSR: Uses in-memory storage
+// In browser: Uses localStorage
+// Hydration: Seamlessly syncs persisted data
+```
+
+<Warning>
+During SSR, the initial value is used. After hydration, the persisted value from localStorage is loaded. This may cause a brief flash of initial content.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Async Data" icon="cloud-arrow-down" href="/examples/async-data">
+    Handle loading states and async operations
+  </Card>
+  <Card title="React Native" icon="mobile" href="/examples/react-native">
+    Use MMKV storage for mobile apps
+  </Card>
+  <Card title="Storage API" icon="database" href="/api/storage">
+    Learn about all storage options
+  </Card>
+  <Card title="Computed Values" icon="calculator" href="/concepts/computed-values">
+    Master getters for derived state
+  </Card>
+</CardGroup>
