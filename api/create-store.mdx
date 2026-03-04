@@ -85,7 +85,7 @@ function createStore<TState extends object, TCustomActions extends CustomActions
 ### Basic Store
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 
 const counterStore = createStore({
   count: 0,
@@ -118,8 +118,8 @@ store.getState().parity // 'odd'
 ### With Storage Persistence
 
 ```typescript
-import { createStore } from '@stan-js/react'
-import { storage } from '@stan-js/react'
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js'
 
 const store = createStore({
   theme: storage('light'),

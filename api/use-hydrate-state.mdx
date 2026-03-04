@@ -41,7 +41,7 @@ Void. The hook updates the store state as a side effect.
 ### Basic Hydration
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 
 const userStore = createStore({
   name: 'Guest',
@@ -69,7 +69,7 @@ function UserProfile({ initialName, initialEmail }: Props) {
 ### SSR with Next.js
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 
 const pageStore = createStore({
   title: 'Default Title',
@@ -106,7 +106,7 @@ function Page({ pageData }: { pageData: PageData }) {
 ### Hydration from URL Parameters
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 import { useSearchParams } from 'next/navigation'
 
 const filterStore = createStore({
@@ -134,7 +134,7 @@ function ProductList() {
 ### Hydration from API Response
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 import { useEffect, useState } from 'react'
 
 const settingsStore = createStore({
@@ -259,8 +259,8 @@ function Cart({ savedCart }: { savedCart: SavedCart }) {
 ### Hydration with Storage
 
 ```typescript
-import { createStore } from '@stan-js/react'
-import { storage } from '@stan-js/react'
+import { createStore } from 'stan-js'
+import { storage } from 'stan-js'
 
 const preferenceStore = createStore({
   theme: storage('light'),

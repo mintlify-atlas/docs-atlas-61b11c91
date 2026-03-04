@@ -45,7 +45,7 @@ Returns an object containing:
 ### Basic Usage
 
 ```typescript
-import { createStore } from '@stan-js/react'
+import { createStore } from 'stan-js'
 
 const counterStore = createStore({
   count: 0,
@@ -186,7 +186,7 @@ function ShoppingCart() {
 ### With Storage Persistence
 
 ```typescript
-import { storage } from '@stan-js/react'
+import { storage } from 'stan-js'
 
 const settingsStore = createStore({
   theme: storage('light'),
