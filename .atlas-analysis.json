@@ -1,0 +1,132 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Stan.js",
+  "projectDescription": "Lightweight and flexible state management library for React applications and vanilla JavaScript",
+  "theme": "mint",
+  "primaryColor": "#077EA4",
+  "lightColor": "#60DAFB",
+  "darkColor": "#0276C7",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/stores",
+              "concepts/state-management",
+              "concepts/subscriptions",
+              "concepts/computed-values"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/react-integration",
+              "guides/persistence",
+              "guides/vanilla-js",
+              "guides/scoped-stores",
+              "guides/ssr",
+              "guides/typescript",
+              "guides/performance"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/basic-counter",
+              "examples/todo-list",
+              "examples/async-data",
+              "examples/react-native"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/create-store",
+              "api/use-store",
+              "api/use-store-effect",
+              "api/use-hydrate-state"
+            ]
+          },
+          {
+            "group": "Vanilla JavaScript",
+            "pages": [
+              "api/vanilla/create-store",
+              "api/vanilla/get-state",
+              "api/vanilla/effect",
+              "api/vanilla/batch-updates"
+            ]
+          },
+          {
+            "group": "Storage & Persistence",
+            "pages": [
+              "api/storage/storage",
+              "api/storage/create-storage",
+              "api/storage/mmkv"
+            ]
+          },
+          {
+            "group": "Scoped Stores",
+            "pages": [
+              "api/scoped/create-scoped-store",
+              "api/scoped/store-provider",
+              "api/scoped/with-store"
+            ]
+          },
+          {
+            "group": "TypeScript",
+            "pages": [
+              "api/types/synchronizer",
+              "api/types/storage",
+              "api/types/custom-actions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Performance-optimized with minimal re-renders",
+    "Built-in data persistence with storage API",
+    "TypeScript support with excellent IntelliSense",
+    "React integration with hooks",
+    "Vanilla JavaScript support",
+    "Scoped stores with context providers",
+    "Zero dependencies",
+    "SSR compatible"
+  ],
+  "publicApiSurface": [
+    "createStore",
+    "createScopedStore",
+    "useStore",
+    "useStoreEffect",
+    "useHydrateState",
+    "storage",
+    "createStorage",
+    "vanilla/createStore",
+    "getState",
+    "effect",
+    "reset",
+    "batchUpdates",
+    "StoreProvider",
+    "withStore",
+    "Synchronizer",
+    "Storage",
+    "CustomActions"
+  ]
+}
